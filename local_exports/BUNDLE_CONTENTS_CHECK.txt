@@ -1,0 +1,9 @@
+bundle=/home/ivenwu/projects/ml-factor/local_exports/RESULT_BUNDLE_repro_20260917_234522_f75533e15ade.tar.gz
+size_bytes=266200929
+sha256=a5d3f1f67d21194450a3ee143d86954ec354ce355344034d6b413f6a3fce7af8
+formal_expected=48
+formal_missing=0
+feature_expected=16
+feature_missing=0
+required_top_level=[]
+portfolio_summary_files=70

@@ -1,0 +1,20 @@
+[      0s] data 1991 5459 grid 1080 K 278 F 31
+/content/code/train.py:79: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  if self._tab is None: self._tab = torch.from_numpy(np.ascontiguousarray(self.tab_np)).to(self.dev)
+[    260s] fusion 2024H2 seed 7 val_ic 0.0893 {'best_epoch': 7}
+[    589s] fusion 2024H2 seed 11 val_ic 0.0951 {'best_epoch': 9}
+[    688s] fusion 2024H2 seed 42 val_ic 0.0821 {'best_epoch': 1}
+[    688s] ==> fusion 2024H2 test rankIC 0.0752 ICIR 0.64
+[    870s] fusion 2025H1 seed 7 val_ic 0.09 {'best_epoch': 4}
+[   1028s] fusion 2025H1 seed 11 val_ic 0.0838 {'best_epoch': 2}
+[   1185s] fusion 2025H1 seed 42 val_ic 0.0852 {'best_epoch': 2}
+[   1186s] ==> fusion 2025H1 test rankIC 0.1212 ICIR 1.688
+[   1451s] fusion 2025H2 seed 7 val_ic 0.1214 {'best_epoch': 5}
+[   1555s] fusion 2025H2 seed 11 val_ic 0.0919 {'best_epoch': 1}
+[   1926s] fusion 2025H2 seed 42 val_ic 0.1057 {'best_epoch': 7}
+[   1926s] ==> fusion 2025H2 test rankIC 0.0741 ICIR 1.001
+[   2067s] fusion 2026H1 seed 7 val_ic 0.126 {'best_epoch': 1}
+[   2236s] fusion 2026H1 seed 11 val_ic 0.1171 {'best_epoch': 2}
+[   2638s] fusion 2026H1 seed 42 val_ic 0.1288 {'best_epoch': 7}
+[   2638s] ==> fusion 2026H1 test rankIC 0.0517 ICIR 0.523
+[   2638s] all done
