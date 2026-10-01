@@ -1,0 +1,7 @@
+{
+  "rows": 126463,
+  "feature_valid_rows": 126463,
+  "label_used_for_valid": false,
+  "checkpoint": "/root/autodl-tmp/quant/repro_ml_factor_luna_20260917/formal_runs/incremental_2025H2_seed7/incremental_2025H2.pt",
+  "model": "incremental"
+}

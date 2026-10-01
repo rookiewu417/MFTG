@@ -1,0 +1,69 @@
+xgb_top base (5d, top10%, open, 10bp) {'excess_ann': 0.279, 'excess_ir': 3.276, 'maxdd': -0.05, 'turnover': 0.591, 'cost_ann': 0.059, 'n': 494.814, 'adv_med_m': 120.526, 'periods': 97.0}
+xgb_top hold 10d {'excess_ann': 0.233, 'excess_ir': 2.618, 'maxdd': -0.04, 'turnover': 0.679, 'cost_ann': 0.034, 'n': 494.714, 'adv_med_m': 134.152, 'periods': 49.0}
+xgb_top hold 20d {'excess_ann': 0.188, 'excess_ir': 1.877, 'maxdd': -0.04, 'turnover': 0.785, 'cost_ann': 0.02, 'n': 495.08, 'adv_med_m': 150.236, 'periods': 25.0}
+xgb_top ema hl=2 {'excess_ann': 0.286, 'excess_ir': 3.566, 'maxdd': -0.054, 'turnover': 0.406, 'cost_ann': 0.041, 'n': 494.557, 'adv_med_m': 122.623, 'periods': 97.0}
+xgb_top ema hl=5 {'excess_ann': 0.286, 'excess_ir': 3.656, 'maxdd': -0.059, 'turnover': 0.284, 'cost_ann': 0.029, 'n': 494.588, 'adv_med_m': 117.221, 'periods': 97.0}
+xgb_top buffer 20% {'excess_ann': 0.308, 'excess_ir': 3.625, 'maxdd': -0.053, 'turnover': 0.388, 'cost_ann': 0.039, 'n': 494.67, 'adv_med_m': 119.172, 'periods': 97.0}
+xgb_top buffer 30% {'excess_ann': 0.317, 'excess_ir': 3.841, 'maxdd': -0.049, 'turnover': 0.283, 'cost_ann': 0.029, 'n': 494.66, 'adv_med_m': 127.435, 'periods': 97.0}
+xgb_top ema3 + buffer20% {'excess_ann': 0.302, 'excess_ir': 4.004, 'maxdd': -0.052, 'turnover': 0.205, 'cost_ann': 0.021, 'n': 494.608, 'adv_med_m': 121.975, 'periods': 97.0}
+xgb_top ema3 + buffer20% + 10d {'excess_ann': 0.242, 'excess_ir': 2.94, 'maxdd': -0.044, 'turnover': 0.349, 'cost_ann': 0.018, 'n': 494.714, 'adv_med_m': 115.172, 'periods': 49.0}
+xgb_top adv >= 50m {'excess_ann': 0.297, 'excess_ir': 3.325, 'maxdd': -0.05, 'turnover': 0.608, 'cost_ann': 0.061, 'n': 410.124, 'adv_med_m': 146.95, 'periods': 97.0}
+xgb_top adv >= 100m {'excess_ann': 0.316, 'excess_ir': 3.094, 'maxdd': -0.063, 'turnover': 0.622, 'cost_ann': 0.062, 'n': 304.093, 'adv_med_m': 226.649, 'periods': 97.0}
+xgb_top adv >= 300m {'excess_ann': 0.31, 'excess_ir': 2.221, 'maxdd': -0.114, 'turnover': 0.62, 'cost_ann': 0.062, 'n': 132.814, 'adv_med_m': 529.158, 'periods': 97.0}
+xgb_top vwap execution {'excess_ann': 0.229, 'excess_ir': 2.871, 'maxdd': -0.051, 'turnover': 0.591, 'cost_ann': 0.059, 'n': 494.814, 'adv_med_m': 120.526, 'periods': 97.0}
+xgb_top top 5% {'excess_ann': 0.329, 'excess_ir': 3.266, 'maxdd': -0.042, 'turnover': 0.671, 'cost_ann': 0.067, 'n': 247.814, 'adv_med_m': 133.472, 'periods': 97.0}
+xgb_top top 2% {'excess_ann': 0.43, 'excess_ir': 3.245, 'maxdd': -0.068, 'turnover': 0.746, 'cost_ann': 0.075, 'n': 98.959, 'adv_med_m': 147.422, 'periods': 97.0}
+xgb_top csi1000 only {'excess_ann': 0.24, 'excess_ir': 2.027, 'maxdd': -0.078, 'turnover': 0.586, 'cost_ann': 0.059, 'n': 99.938, 'adv_med_m': 261.742, 'periods': 97.0}
+xgb_top csi500 only {'excess_ann': 0.158, 'excess_ir': 1.382, 'maxdd': -0.115, 'turnover': 0.581, 'cost_ann': 0.058, 'n': 50.052, 'adv_med_m': 376.78, 'periods': 97.0}
+xgb base (5d, top10%, open, 10bp) {'excess_ann': 0.12, 'excess_ir': 1.245, 'maxdd': -0.099, 'turnover': 0.476, 'cost_ann': 0.048, 'n': 493.454, 'adv_med_m': 55.482, 'periods': 97.0}
+xgb hold 10d {'excess_ann': 0.102, 'excess_ir': 1.071, 'maxdd': -0.097, 'turnover': 0.562, 'cost_ann': 0.028, 'n': 493.531, 'adv_med_m': 56.382, 'periods': 49.0}
+xgb hold 20d {'excess_ann': 0.098, 'excess_ir': 0.844, 'maxdd': -0.076, 'turnover': 0.662, 'cost_ann': 0.017, 'n': 493.56, 'adv_med_m': 56.382, 'periods': 25.0}
+xgb ema hl=2 {'excess_ann': 0.104, 'excess_ir': 1.075, 'maxdd': -0.101, 'turnover': 0.307, 'cost_ann': 0.031, 'n': 494.01, 'adv_med_m': 51.701, 'periods': 97.0}
+xgb ema hl=5 {'excess_ann': 0.095, 'excess_ir': 0.952, 'maxdd': -0.105, 'turnover': 0.204, 'cost_ann': 0.021, 'n': 493.34, 'adv_med_m': 49.751, 'periods': 97.0}
+xgb buffer 20% {'excess_ann': 0.124, 'excess_ir': 1.261, 'maxdd': -0.106, 'turnover': 0.269, 'cost_ann': 0.027, 'n': 493.33, 'adv_med_m': 53.398, 'periods': 97.0}
+xgb buffer 30% {'excess_ann': 0.136, 'excess_ir': 1.366, 'maxdd': -0.099, 'turnover': 0.183, 'cost_ann': 0.019, 'n': 493.402, 'adv_med_m': 52.752, 'periods': 97.0}
+xgb ema3 + buffer20% {'excess_ann': 0.104, 'excess_ir': 1.032, 'maxdd': -0.104, 'turnover': 0.129, 'cost_ann': 0.013, 'n': 493.34, 'adv_med_m': 49.605, 'periods': 97.0}
+xgb ema3 + buffer20% + 10d {'excess_ann': 0.098, 'excess_ir': 0.999, 'maxdd': -0.099, 'turnover': 0.225, 'cost_ann': 0.012, 'n': 493.347, 'adv_med_m': 50.005, 'periods': 49.0}
+xgb adv >= 50m {'excess_ann': 0.123, 'excess_ir': 1.266, 'maxdd': -0.098, 'turnover': 0.546, 'cost_ann': 0.055, 'n': 408.732, 'adv_med_m': 87.591, 'periods': 97.0}
+xgb adv >= 100m {'excess_ann': 0.103, 'excess_ir': 0.966, 'maxdd': -0.119, 'turnover': 0.599, 'cost_ann': 0.06, 'n': 302.969, 'adv_med_m': 165.016, 'periods': 97.0}
+xgb adv >= 300m {'excess_ann': 0.011, 'excess_ir': 0.151, 'maxdd': -0.193, 'turnover': 0.601, 'cost_ann': 0.06, 'n': 133.289, 'adv_med_m': 485.42, 'periods': 97.0}
+xgb vwap execution {'excess_ann': 0.102, 'excess_ir': 1.162, 'maxdd': -0.105, 'turnover': 0.476, 'cost_ann': 0.048, 'n': 493.454, 'adv_med_m': 55.482, 'periods': 97.0}
+xgb top 5% {'excess_ann': 0.111, 'excess_ir': 1.057, 'maxdd': -0.108, 'turnover': 0.564, 'cost_ann': 0.057, 'n': 246.773, 'adv_med_m': 51.575, 'periods': 97.0}
+xgb top 2% {'excess_ann': 0.129, 'excess_ir': 1.113, 'maxdd': -0.109, 'turnover': 0.665, 'cost_ann': 0.067, 'n': 98.856, 'adv_med_m': 51.528, 'periods': 97.0}
+xgb csi1000 only {'excess_ann': 0.091, 'excess_ir': 0.873, 'maxdd': -0.115, 'turnover': 0.585, 'cost_ann': 0.059, 'n': 99.887, 'adv_med_m': 113.005, 'periods': 97.0}
+xgb csi500 only {'excess_ann': -0.002, 'excess_ir': 0.033, 'maxdd': -0.142, 'turnover': 0.601, 'cost_ann': 0.061, 'n': 50.0, 'adv_med_m': 199.115, 'periods': 97.0}
+fusion_top base (5d, top10%, open, 10bp) {'excess_ann': 0.182, 'excess_ir': 2.522, 'maxdd': -0.062, 'turnover': 0.514, 'cost_ann': 0.052, 'n': 494.67, 'adv_med_m': 119.754, 'periods': 97.0}
+fusion_top hold 10d {'excess_ann': 0.168, 'excess_ir': 2.422, 'maxdd': -0.061, 'turnover': 0.596, 'cost_ann': 0.03, 'n': 494.673, 'adv_med_m': 117.424, 'periods': 49.0}
+fusion_top hold 20d {'excess_ann': 0.12, 'excess_ir': 1.225, 'maxdd': -0.091, 'turnover': 0.682, 'cost_ann': 0.017, 'n': 495.28, 'adv_med_m': 117.227, 'periods': 25.0}
+fusion_top ema hl=2 {'excess_ann': 0.194, 'excess_ir': 2.646, 'maxdd': -0.06, 'turnover': 0.342, 'cost_ann': 0.035, 'n': 494.361, 'adv_med_m': 101.85, 'periods': 97.0}
+fusion_top ema hl=5 {'excess_ann': 0.228, 'excess_ir': 2.972, 'maxdd': -0.052, 'turnover': 0.224, 'cost_ann': 0.023, 'n': 494.32, 'adv_med_m': 93.018, 'periods': 97.0}
+fusion_top buffer 20% {'excess_ann': 0.225, 'excess_ir': 2.988, 'maxdd': -0.051, 'turnover': 0.288, 'cost_ann': 0.029, 'n': 494.639, 'adv_med_m': 109.208, 'periods': 97.0}
+fusion_top buffer 30% {'excess_ann': 0.228, 'excess_ir': 2.924, 'maxdd': -0.047, 'turnover': 0.185, 'cost_ann': 0.019, 'n': 494.351, 'adv_med_m': 105.87, 'periods': 97.0}
+fusion_top ema3 + buffer20% {'excess_ann': 0.229, 'excess_ir': 3.001, 'maxdd': -0.048, 'turnover': 0.142, 'cost_ann': 0.015, 'n': 494.351, 'adv_med_m': 94.097, 'periods': 97.0}
+fusion_top ema3 + buffer20% + 10d {'excess_ann': 0.213, 'excess_ir': 2.978, 'maxdd': -0.043, 'turnover': 0.24, 'cost_ann': 0.012, 'n': 494.224, 'adv_med_m': 93.568, 'periods': 49.0}
+fusion_top adv >= 50m {'excess_ann': 0.148, 'excess_ir': 1.984, 'maxdd': -0.093, 'turnover': 0.541, 'cost_ann': 0.054, 'n': 409.959, 'adv_med_m': 141.765, 'periods': 97.0}
+fusion_top adv >= 100m {'excess_ann': 0.155, 'excess_ir': 1.737, 'maxdd': -0.123, 'turnover': 0.565, 'cost_ann': 0.057, 'n': 303.825, 'adv_med_m': 216.302, 'periods': 97.0}
+fusion_top adv >= 300m {'excess_ann': 0.193, 'excess_ir': 1.472, 'maxdd': -0.169, 'turnover': 0.582, 'cost_ann': 0.058, 'n': 133.608, 'adv_med_m': 550.749, 'periods': 97.0}
+fusion_top vwap execution {'excess_ann': 0.165, 'excess_ir': 2.435, 'maxdd': -0.063, 'turnover': 0.514, 'cost_ann': 0.052, 'n': 494.67, 'adv_med_m': 119.754, 'periods': 97.0}
+fusion_top top 5% {'excess_ann': 0.182, 'excess_ir': 2.043, 'maxdd': -0.076, 'turnover': 0.603, 'cost_ann': 0.061, 'n': 247.485, 'adv_med_m': 125.037, 'periods': 97.0}
+fusion_top top 2% {'excess_ann': 0.164, 'excess_ir': 1.452, 'maxdd': -0.114, 'turnover': 0.688, 'cost_ann': 0.069, 'n': 99.155, 'adv_med_m': 127.077, 'periods': 97.0}
+fusion_top csi1000 only {'excess_ann': 0.17, 'excess_ir': 1.706, 'maxdd': -0.095, 'turnover': 0.563, 'cost_ann': 0.057, 'n': 99.979, 'adv_med_m': 273.645, 'periods': 97.0}
+fusion_top csi500 only {'excess_ann': 0.045, 'excess_ir': 0.437, 'maxdd': -0.184, 'turnover': 0.564, 'cost_ann': 0.057, 'n': 50.082, 'adv_med_m': 438.686, 'periods': 97.0}
+capacity ema3+buf20 0.0 0.302 4.0
+capacity ema3+buf20 1.0 0.269 3.62
+capacity ema3+buf20 5.0 0.229 3.14
+capacity ema3+buf20 10.0 0.2 2.78
+capacity ema3+buf20 30.0 0.13 1.87
+capacity ema3+buf20 100.0 0.005 0.11
+capacity ema3+buf20+adv100m 0.0 0.249 2.44
+capacity ema3+buf20+adv100m 1.0 0.21 2.09
+capacity ema3+buf20+adv100m 5.0 0.163 1.67
+capacity ema3+buf20+adv100m 10.0 0.129 1.35
+capacity ema3+buf20+adv100m 30.0 0.048 0.55
+capacity ema3+buf20+adv100m 100.0 -0.093 -0.97
+capacity ema3+buf20+adv100m+top5% 0.0 0.26 2.14
+capacity ema3+buf20+adv100m+top5% 1.0 0.193 1.64
+capacity ema3+buf20+adv100m+top5% 5.0 0.114 1.02
+capacity ema3+buf20+adv100m+top5% 10.0 0.058 0.56
+capacity ema3+buf20+adv100m+top5% 30.0 -0.069 -0.57
+capacity ema3+buf20+adv100m+top5% 100.0 -0.277 -2.65

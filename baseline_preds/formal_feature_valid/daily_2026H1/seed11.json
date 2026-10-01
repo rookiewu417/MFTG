@@ -1,0 +1,7 @@
+{
+  "rows": 106162,
+  "feature_valid_rows": 106162,
+  "label_used_for_valid": false,
+  "checkpoint": "/root/autodl-tmp/quant/repro_ml_factor_luna_20260917/formal_runs/daily_2026H1_seed11/daily_2026H1.pt",
+  "model": "daily"
+}

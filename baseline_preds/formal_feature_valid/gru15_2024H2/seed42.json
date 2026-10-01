@@ -1,0 +1,7 @@
+{
+  "rows": 115993,
+  "feature_valid_rows": 115993,
+  "label_used_for_valid": false,
+  "checkpoint": "/root/autodl-tmp/quant/repro_ml_factor_luna_20260917/formal_runs/gru15_2024H2_seed42/gru15_2024H2.pt",
+  "model": "gru15"
+}

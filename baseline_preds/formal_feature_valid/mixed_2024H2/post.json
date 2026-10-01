@@ -1,0 +1,12 @@
+{
+  "rows": 115993,
+  "input_valid": 115993,
+  "output_valid": 113952,
+  "filtered_stock_status": 2032,
+  "no_l1_industry": 9,
+  "industry_src": "SW2021",
+  "industry_level": "SW2021 L1",
+  "winsorized_stocks": 5412,
+  "winsorization": "Each date's full valid cross-section, MAD cutoff 5.0 scaled MAD (implementation assumption; report says winsorization but gives no rule)",
+  "neutralization": "industry-group mean residual plus group standardization; stocks without L1 mapping excluded from industry-only valid and retained only in pred_raw; market-cap neutralization unavailable"
+}

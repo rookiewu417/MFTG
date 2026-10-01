@@ -1,0 +1,20 @@
+[      0s] data 1991 5459 grid 1080 K 278 F 31
+/content/code/train.py:79: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  if self._tab is None: self._tab = torch.from_numpy(np.ascontiguousarray(self.tab_np)).to(self.dev)
+[     68s] mlp 2024H2 seed 7 val_ic 0.0454 {'best_epoch': 5}
+[    146s] mlp 2024H2 seed 11 val_ic 0.0423 {'best_epoch': 8}
+[    179s] mlp 2024H2 seed 42 val_ic 0.0347 {'best_epoch': 4}
+[    180s] ==> mlp 2024H2 test rankIC 0.0107 ICIR 0.135
+[    245s] mlp 2025H1 seed 7 val_ic 0.0609 {'best_epoch': 4}
+[    291s] mlp 2025H1 seed 11 val_ic 0.0524 {'best_epoch': 2}
+[    337s] mlp 2025H1 seed 42 val_ic 0.0423 {'best_epoch': 2}
+[    337s] ==> mlp 2025H1 test rankIC 0.0802 ICIR 0.714
+[    402s] mlp 2025H2 seed 7 val_ic 0.0891 {'best_epoch': 5}
+[    437s] mlp 2025H2 seed 11 val_ic 0.0673 {'best_epoch': 2}
+[    520s] mlp 2025H2 seed 42 val_ic 0.0694 {'best_epoch': 5}
+[    520s] ==> mlp 2025H2 test rankIC 0.061 ICIR 0.729
+[    574s] mlp 2026H1 seed 7 val_ic 0.0824 {'best_epoch': 2}
+[    656s] mlp 2026H1 seed 11 val_ic 0.0836 {'best_epoch': 7}
+[    779s] mlp 2026H1 seed 42 val_ic 0.0907 {'best_epoch': 7}
+[    779s] ==> mlp 2026H1 test rankIC 0.0314 ICIR 0.235
+[    779s] all done

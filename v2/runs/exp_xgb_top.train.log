@@ -1,0 +1,18 @@
+[      0s] data 1991 5459 grid 1080 K 278 F 31
+[    665s] xgb 2024H2 seed 7 val_ic 0.0824 {'best_iter': 3269}
+[   1305s] xgb 2024H2 seed 11 val_ic 0.0823 {'best_iter': 3297}
+[   1959s] xgb 2024H2 seed 42 val_ic 0.0823 {'best_iter': 3300}
+[   1959s] ==> xgb 2024H2 test rankIC 0.1165 ICIR 0.97
+[   2679s] xgb 2025H1 seed 7 val_ic 0.0896 {'best_iter': 3300}
+[   3393s] xgb 2025H1 seed 11 val_ic 0.0921 {'best_iter': 3243}
+[   3816s] xgb 2025H1 seed 42 val_ic 0.0923 {'best_iter': 3242}
+[   3817s] ==> xgb 2025H1 test rankIC 0.1291 ICIR 1.158
+[   4275s] xgb 2025H2 seed 7 val_ic 0.1272 {'best_iter': 3297}
+[   4669s] xgb 2025H2 seed 11 val_ic 0.1252 {'best_iter': 3296}
+[   5064s] xgb 2025H2 seed 42 val_ic 0.1262 {'best_iter': 3298}
+[   5064s] ==> xgb 2025H2 test rankIC 0.0954 ICIR 0.914
+[   5498s] xgb 2026H1 seed 7 val_ic 0.0966 {'best_iter': 3283}
+[   5932s] xgb 2026H1 seed 11 val_ic 0.097 {'best_iter': 3298}
+[   6365s] xgb 2026H1 seed 42 val_ic 0.0979 {'best_iter': 3292}
+[   6365s] ==> xgb 2026H1 test rankIC 0.0759 ICIR 0.51
+[   6365s] all done
