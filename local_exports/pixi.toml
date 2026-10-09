@@ -1,5 +1,5 @@
 [workspace]
-name = "ml-factor-report-reproduction"
+name = "MFTG-report-reproduction"
 channels = ["conda-forge"]
 channel-priority = "strict"
 platforms = ["linux-64"]

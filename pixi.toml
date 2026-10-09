@@ -1,8 +1,9 @@
 [workspace]
-name = "ml-factor-report-reproduction"
+name = "MFTG"
 channels = ["conda-forge"]
 channel-priority = "strict"
 platforms = ["linux-64"]
+
 [dependencies]
 python = "3.12.*"
 numpy = ">=1.26,<3"
@@ -11,9 +12,22 @@ pyarrow = ">=16,<22"
 polars = ">=1.0,<2"
 scipy = ">=1.12,<2"
 pytorch = ">=2.3,<3"
-[tasks]
-metadata = "python reproduce.py metadata"
-prepare = "python reproduce.py prepare"
-train = "python reproduce.py train"
-evaluate = "python reproduce.py evaluate"
+duckdb = ">=1.0"
+lightgbm = ">=4.3"
 
+[tasks]
+# end-to-end line
+build-base = "python shared/build_base.py"
+build-mftg = "python mftg/build_mftg.py"
+build-flow = "python mftg/build_flow.py"
+build-styles = "python mftg/build_styles.py"
+evaluate = "python shared/evaluate.py"
+rep-ensemble = "python repro/rep_ensemble.py"
+# report reproduction (baseline)
+baseline-metadata = "python baseline_src/reproduce.py metadata"
+baseline-prepare = "python baseline_src/reproduce.py prepare"
+baseline-train = "python baseline_src/reproduce.py train"
+baseline-evaluate = "python baseline_src/reproduce.py evaluate"
+baseline-rolling = "python baseline_src/rolling_full.py"
+baseline-backtest = "python baseline_src/portfolio_backtest.py"
+baseline-test = { cmd = "python baseline_src/tests/test_asof_inference_export.py && python baseline_src/tests/test_factor_postprocess_asof.py" }
