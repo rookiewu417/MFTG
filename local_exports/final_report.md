@@ -1,4 +1,4 @@
-# Feature-only formal reproduction report
+# Feature-only formal baseline report
 
 All rows below come from checkpoint feature-only inference using only as-of feature validity; future labels are retained only as evaluation metadata.
 

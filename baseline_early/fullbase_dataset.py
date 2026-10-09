@@ -2,7 +2,7 @@ from pathlib import Path
 import argparse, json, time
 import numpy as np
 import pandas as pd
-import reproduce
+import gru_baseline
 
 class FullBase:
     def __init__(self, data_root='/root/autodl-tmp/quant/data/ashare', base_dir='full_base', every=5):
@@ -16,16 +16,16 @@ class FullBase:
         self.date_int=self.dates.strftime('%Y%m%d').astype(np.int32).to_numpy()
         self.didx={int(x):i for i,x in enumerate(self.date_int)}
     def _load_daily(self):
-        cols=['trade_date','ts_code']+reproduce.FEATS
+        cols=['trade_date','ts_code']+gru_baseline.FEATS
         d=pd.read_parquet(self.root/'daily/post_weighted.parquet',columns=cols)
         d.trade_date=pd.to_datetime(d.trade_date)
         d=d[d.trade_date.isin(self.dates)&d.ts_code.isin(self.codes)]
         d=d.drop_duplicates(['trade_date','ts_code'],keep='last')
-        out=np.full((len(self.dates),len(self.codes),len(reproduce.FEATS)),np.nan,np.float32)
+        out=np.full((len(self.dates),len(self.codes),len(gru_baseline.FEATS)),np.nan,np.float32)
         di=pd.Categorical(d.trade_date,categories=self.dates).codes
         ci=pd.Categorical(d.ts_code,categories=self.codes).codes
         good=(di>=0)&(ci>=0)
-        out[di[good],ci[good],:]=d.loc[good,reproduce.FEATS].to_numpy(np.float32)
+        out[di[good],ci[good],:]=d.loc[good,gru_baseline.FEATS].to_numpy(np.float32)
         return out
     def day_batch(self, di, normalize=True, valid_only=True, need_x15=True, need_xd=True):
         lo=di-39; hi=di+11
@@ -43,8 +43,8 @@ class FullBase:
         y=self.daily[di+10,:,3]/self.daily[di,:,3]-1.0
         valid=valid15&validd&np.isfinite(y)
         if normalize:
-            if need_x15: x15=reproduce.prep_seq(x15)
-            if need_xd: xd=reproduce.prep_seq(xd,denom_last=True)
+            if need_x15: x15=gru_baseline.prep_seq(x15)
+            if need_xd: xd=gru_baseline.prep_seq(xd,denom_last=True)
             if need_x15: valid &= np.isfinite(x15).all(axis=(1,2))
             if need_xd: valid &= np.isfinite(xd).all(axis=(1,2))
         if valid_only:

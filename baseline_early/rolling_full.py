@@ -1,14 +1,14 @@
 from pathlib import Path
 import argparse,json,time,hashlib
 import numpy as np, torch
-import reproduce
+import gru_baseline
 from fullbase_dataset import FullBase
 
-# early windows (same cutoffs as Weave project weave/train.py) -- the formal reproduction only ran 2024H2-2026H1
+# early windows (same cutoffs as Weave project weave/train.py) -- the formal baseline only ran 2024H2-2026H1
 BLOCKS=[('2022H2',20220701,20221231,20210701,20220630,20210630),('2023H1',20230101,20230630,20220101,20221231,20211231),('2023H2',20230701,20231231,20220701,20230630,20220630),('2024H1',20240101,20240630,20230101,20231231,20221231)]
 
 def model_for(name):
-    return reproduce.DailyGRU() if name=='daily' else reproduce.GRU15() if name=='gru15' else reproduce.Mixed(name=='incremental')
+    return gru_baseline.DailyGRU() if name=='daily' else gru_baseline.GRU15() if name=='gru15' else gru_baseline.Mixed(name=='incremental')
 
 def get_day(ds,di,name,cache_dir=None,stage=None,ram_cache=False,cache_backend='npz'):
     need15=(name!='daily' and stage!='daily'); needd=(name!='gru15')
@@ -44,7 +44,7 @@ def fit_one(model,name,days,eval_days,ds,dev,epochs,patience,cache_dir=None,ram_
                     if name=='incremental' and stage=='daily': pp=model.stage1(dd)
                     elif name=='incremental': pp=model.stage1(dd)+model.minute_out(xx)
                     else: pp=model(xx,dd)
-                    vals.append(float((-reproduce.corr_loss(pp,yy)).cpu()))
+                    vals.append(float((-gru_baseline.corr_loss(pp,yy)).cpu()))
         return float(np.mean(vals)) if vals else float('nan')
     if name=='incremental':
         opt=torch.optim.Adam(list(model.gd.parameters())+list(model.bnd.parameters())+list(model.fcd.parameters()),lr=1e-3); best=-1e9; beststate=None; bad=0
@@ -53,7 +53,7 @@ def fit_one(model,name,days,eval_days,ds,dev,epochs,patience,cache_dir=None,ram_
             for di in days:
                 q=get_day(ds,di,name,cache_dir,stage='daily',ram_cache=ram_cache,cache_backend=cache_backend); 
                 if len(q['y'])<2: continue
-                dd=torch.from_numpy(q['xd']).to(dev); yy=torch.from_numpy(q['y']).to(dev); opt.zero_grad(set_to_none=True); loss=reproduce.corr_loss(model.stage1(dd),yy); loss.backward(); opt.step(); losses.append(float(loss.detach().cpu()))
+                dd=torch.from_numpy(q['xd']).to(dev); yy=torch.from_numpy(q['y']).to(dev); opt.zero_grad(set_to_none=True); loss=gru_baseline.corr_loss(model.stage1(dd),yy); loss.backward(); opt.step(); losses.append(float(loss.detach().cpu()))
             score=run_eval(stage='daily'); print({'stage':'daily','epoch':ep+1,'loss':float(np.mean(losses)) if losses else None,'val_ic':score},flush=True)
             if score>best: best=score; beststate={k:v.detach().cpu().clone() for k,v in model.state_dict().items()}; bad=0
             else: bad+=1
@@ -69,7 +69,7 @@ def fit_one(model,name,days,eval_days,ds,dev,epochs,patience,cache_dir=None,ram_
                 if len(q['y'])<2: continue
                 xx=torch.from_numpy(q['x15']).to(dev); dd=torch.from_numpy(q['xd']).to(dev); yy=torch.from_numpy(q['y']).to(dev); opt.zero_grad(set_to_none=True)
                 with torch.no_grad(): y1=model.stage1(dd)
-                loss=reproduce.corr_loss(y1.detach()+model.minute_out(xx),yy); loss.backward(); opt.step(); losses.append(float(loss.detach().cpu()))
+                loss=gru_baseline.corr_loss(y1.detach()+model.minute_out(xx),yy); loss.backward(); opt.step(); losses.append(float(loss.detach().cpu()))
             score=run_eval(stage='minute'); print({'stage':'minute_residual','epoch':ep+1,'loss':float(np.mean(losses)) if losses else None,'val_ic':score},flush=True)
             if score>best: best=score; beststate={k:v.detach().cpu().clone() for k,v in model.state_dict().items()}; bad=0
             else: bad+=1
@@ -81,7 +81,7 @@ def fit_one(model,name,days,eval_days,ds,dev,epochs,patience,cache_dir=None,ram_
         for di in days:
             q=get_day(ds,di,name,cache_dir)
             if len(q['y'])<2: continue
-            xx=torch.from_numpy(q['x15']).to(dev); dd=torch.from_numpy(q['xd']).to(dev); yy=torch.from_numpy(q['y']).to(dev); opt.zero_grad(set_to_none=True); loss=reproduce.corr_loss(model(xx,dd),yy); loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(),5); opt.step(); losses.append(float(loss.detach().cpu()))
+            xx=torch.from_numpy(q['x15']).to(dev); dd=torch.from_numpy(q['xd']).to(dev); yy=torch.from_numpy(q['y']).to(dev); opt.zero_grad(set_to_none=True); loss=gru_baseline.corr_loss(model(xx,dd),yy); loss.backward(); torch.nn.utils.clip_grad_norm_(model.parameters(),5); opt.step(); losses.append(float(loss.detach().cpu()))
         score=run_eval(); rec={'epoch':ep+1,'loss':float(np.mean(losses)) if losses else None,'val_ic':score}; hist.append(rec); print(rec,flush=True)
         if score>best: best=score; beststate={k:v.detach().cpu().clone() for k,v in model.state_dict().items()}; bad=0
         else: bad+=1

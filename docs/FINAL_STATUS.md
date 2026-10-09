@@ -1,4 +1,4 @@
-# Final reproduction status
+# Baseline final status
 
 The formal run identified by `repro_20260917_234522_f75533e15ade` completed all 48 scheduled jobs: four model variants (`daily`, `gru15`, `mixed`, `incremental`), four half-year rounds (2024H2 through 2026H1), and seeds 7, 11, and 42. Each job has a matching `.SUCCESS`, checkpoint, prediction file, configuration, and rolling summary.
 

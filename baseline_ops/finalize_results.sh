@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Finalize a completed remote reproduction without including raw data/cache.
+# Finalize a completed remote baseline run without including raw data/cache.
 ROOT="$(cd "${1:-.}" && pwd)"
 OUT="$ROOT/finalization"
 mkdir -p "$OUT"
@@ -44,7 +44,7 @@ tar -czf "$OUT/RESULT_BUNDLE.tar.gz" \
   --exclude='./.pixi' --exclude='./finalization/RESULT_BUNDLE.tar.gz' \
   -C "$ROOT" formal_runs formal_feature_valid formal_ensembles \
   pixi.toml pixi.lock README.md METHOD_LIMITATIONS.md \
-  rolling_full.py fullbase_dataset.py reproduce.py ensemble_predictions.py \
+  rolling_full.py fullbase_dataset.py gru_baseline.py ensemble_predictions.py \
   feature_valid_inference.py factor_postprocess.py portfolio_backtest.py \
   compare_feature_valid.py 2>/dev/null || die "bundle creation failed"
 (cd "$OUT" && sha256sum RESULT_BUNDLE.tar.gz > RESULT_BUNDLE.sha256)
