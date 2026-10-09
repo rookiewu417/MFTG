@@ -1,6 +1,6 @@
-"""Seed-ensemble the early-window reproduction runs (runs/repro/<model>_s<seed>/<model>_<block>_pred.npz) like
+"""Seed-ensemble the early-window baseline runs (runs/repro/<model>_s<seed>/<model>_<block>_pred.npz) like
 baseline_src/ensemble_predictions.py (per-date z-score, then mean), and assemble runs/repro/rep8/<model>/<block>_pred.npz:
-early windows from these ensembles, 2024H2-2026H1 from the formal reproduction ensembles."""
+early windows from these ensembles, 2024H2-2026H1 from the formal baseline ensembles."""
 from pathlib import Path
 import numpy as np
 import pandas as pd

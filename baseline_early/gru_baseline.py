@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""From-scratch reproduction of the multi-frequency GRU report."""
+"""Multi-frequency GRU baseline."""
 from __future__ import annotations
 import argparse, glob, json, os, re, time
 from pathlib import Path

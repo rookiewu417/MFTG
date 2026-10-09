@@ -1,5 +1,5 @@
-"""Build the report reproduction's FullBase inputs for the early windows (2022H2-2024H1), using the reproduction's own
-15-minute aggregation of the 1-minute bars (copied from baseline_src/reproduce.py: aggregate_month / FEATS / adj scaling).
+"""Build the baseline's FullBase inputs for the early windows (2022H2-2024H1), using the baseline's own
+15-minute aggregation of the 1-minute bars (copied from baseline_src/gru_baseline.py: aggregate_month / FEATS / adj scaling).
 
 out/full_base/minute_base.float32 [T, N, 16, 6] + meta.json (shape, dates, codes); out/data/daily/post_weighted.parquet
 (subset) and out/data/meta/stock_basic.parquet, so FullBase (fullbase_dataset.py, patched to read axes from meta.json) works.
@@ -16,7 +16,7 @@ FEATS = ["open", "high", "low", "close", "vwap", "vol"]
 START, END = '2016-01-04', '2024-07-31'
 
 
-def aggregate_month(path, codes):          # verbatim logic of baseline_src/reproduce.py::aggregate_month
+def aggregate_month(path, codes):          # verbatim logic of baseline_src/gru_baseline.py::aggregate_month
     lf = pl.read_parquet(path, columns=["ts_code", "trade_time", "open", "high", "low", "close", "vol", "amount"])
     lf = lf.filter(pl.col("ts_code").is_in(list(codes)))
     lf = lf.with_columns([pl.col("trade_time").dt.date().alias("trade_date"),

@@ -22,12 +22,12 @@ build-mftg = "python mftg/build_mftg.py"
 build-flow = "python mftg/build_flow.py"
 build-styles = "python mftg/build_styles.py"
 evaluate = "python shared/evaluate.py"
-rep-ensemble = "python repro/rep_ensemble.py"
-# report reproduction (baseline)
-baseline-metadata = "python baseline_src/reproduce.py metadata"
-baseline-prepare = "python baseline_src/reproduce.py prepare"
-baseline-train = "python baseline_src/reproduce.py train"
-baseline-evaluate = "python baseline_src/reproduce.py evaluate"
+rep-ensemble = "python baseline_early/rep_ensemble.py"
+# baseline
+baseline-metadata = "python baseline_src/gru_baseline.py metadata"
+baseline-prepare = "python baseline_src/gru_baseline.py prepare"
+baseline-train = "python baseline_src/gru_baseline.py train"
+baseline-evaluate = "python baseline_src/gru_baseline.py evaluate"
 baseline-rolling = "python baseline_src/rolling_full.py"
 baseline-backtest = "python baseline_src/portfolio_backtest.py"
 baseline-test = { cmd = "python baseline_src/tests/test_asof_inference_export.py && python baseline_src/tests/test_factor_postprocess_asof.py" }

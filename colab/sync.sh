@@ -2,7 +2,7 @@
 # usage: [LINE=mftg|repro] sync.sh
 # pull every finished *_pred.npz / *_log.json not yet present locally (contents API only; kernel stays busy)
 . /home/ivenwu/projects/MFTG/colab/env.sh
-R=$MFTG_ROOT/runs/$LINE   # results go to runs/<line>/<run>/<model>/ (LINE=mftg by default; LINE=repro for the paper-reproduction jobs)
+R=$MFTG_ROOT/runs/$LINE   # results go to runs/<line>/<run>/<model>/ (LINE=mftg by default; LINE=repro for the baseline jobs)
 lsd() { colab ls -s $SES "$1" 2>/dev/null | grep -v "^\[colab\]\|^$" | awk '{print $NF}' | sed 's#/$##'; }
 for run in $(lsd /content/out); do
   case "$run" in *.log|*.json|*.tmp) continue;; esac

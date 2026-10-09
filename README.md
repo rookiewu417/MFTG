@@ -3,7 +3,7 @@
 **A股多频率神经网络因子挖掘与机器学习因子进阶研究**
 
 本项目包含两个部分：
-1. **基线复现**：华泰证券金工研报《神经网络多频率因子挖掘模型》（2023-05-11）的独立端到端复现。
+1. **基线（多频率 GRU）**：日线 + 15 分钟线的多频率 GRU 模型，仅作为对比基线，不继续优化。
 2. **端到端线 MFTG**（`mftg/`）：直接从原始 5 分钟 K 线与日线训练的神经网络，不使用人工因子公式。
 
 因子线（Weave）已拆为独立项目，位于 `../Weave/`。
@@ -38,16 +38,14 @@
 ```
 MFTG/
 ├── README.md / LICENSE / .gitignore
-├── pixi.toml / pixi.lock                        # 基线复现环境（含 PyTorch）；task：metadata / prepare / train / evaluate / rolling / backtest / test
+├── pixi.toml / pixi.lock                        # 基线环境（含 PyTorch）；task：metadata / prepare / train / evaluate / rolling / backtest / test
 │
-├── docs/                                        # 文档与原始材料
-│   ├── 20230511-华泰证券-金工：神经网络多频率因子挖掘模型.pdf   # 原始研报
-│   ├── report_extract.txt                       # 研报文本抽取
-│   ├── FINAL_STATUS.md                          # 基线复现审计终态与哈希清单
-│   └── METHOD_LIMITATIONS.md                    # 复现方法边界与实现假设（local_exports/ 里另有同内容副本）
+├── docs/                                        # 文档
+│   ├── FINAL_STATUS.md                          # 基线运行终态与哈希清单
+│   └── METHOD_LIMITATIONS.md                    # 基线方法边界与实现假设（local_exports/ 里另有同内容副本）
 │
-├── baseline_src/                                # 基线复现代码（研报模型，2024H2–2026H1 四个窗口）
-│   ├── reproduce.py                             # 数据预处理/模型训练/单点评估入口
+├── baseline_src/                                # 基线代码（多频率 GRU，2024H2–2026H1 四个窗口）
+│   ├── gru_baseline.py                             # 数据预处理/模型训练/单点评估入口
 │   ├── rolling_full.py                          # 全市场滚动训练与推断
 │   ├── fullbase_dataset.py                      # 内存映射高频+日频数据集构建
 │   ├── feature_valid_inference.py               # 特征日截面推断流水线
@@ -59,7 +57,7 @@ MFTG/
 │   ├── tests/                                   # test_*.py（pixi run baseline-test 跑其中两个；test_portfolio_backtest.py 需 pytest）
 │   └── pixi.toml                                # 在本目录内单独运行的环境副本（与根目录相同）
 │
-├── baseline_ops/                                # 基线复现的远端（AutoDL）运维脚本，已完成使命，仅留档
+├── baseline_ops/                                # 基线训练的远端（AutoDL）运维脚本，已完成使命，仅留档
 │   ├── auto_shutdown_guard{,_v2,_v3}.sh         # 结果导出后的关机守卫（v1 已被撤销为只做诊断）
 │   ├── test_auto_shutdown_guard{,_v2,_v3}.sh    # 对应测试（用 mock 关机命令）
 │   ├── export_and_arm_watch.sh                  # 经 SSH 把结果包拉到 local_exports/ 并"上保险"
@@ -90,19 +88,19 @@ MFTG/
 │   ├── join_months.py / bench.py            # 月度重训拼接、速度基准
 │   └── upload_{mftg,flow,parts}.sh          # 上传脚本
 │
-├── repro/                                   # 研报复现的早期窗口补训练（2022H2–2024H1）与 8 窗口拼接
-│   └── build_fullbase.py / driver_repro.py / fullbase_dataset.py / reproduce.py / rolling_full.py / rep_ensemble.py
+├── baseline_early/                                   # 基线的早期窗口补训练（2022H2–2024H1）与 8 窗口拼接
+│   └── build_fullbase.py / driver_baseline.py / fullbase_dataset.py / gru_baseline.py / rolling_full.py / rep_ensemble.py
 │
 ├── colab/                                   # 云端运维（env / keeper / supervisor / monitor / sync / fetch / submit / status / watch / tail）
 │
 ├── build/                                   # 【勿动】数据产物（已 gitignore）
 │   ├── shared/                              # base/ 与 axes.npz
 │   ├── mftg/                                # 端到端数据、打包目录、long/（长历史）
-│   ├── repro/                               # 研报复现产物
+│   ├── repro/                               # 基线产物
 │   └── keeper/                              # 云端任务守护状态
 └── runs/                                    # 【勿动】预测文件（Portfolio 只读取这里）
     ├── mftg/                                # 端到端线变体（见下方命名对照）
-    └── repro/                               # 研报复现（rep8/ 为拼接后的 8 窗口）
+    └── repro/                               # 基线（rep8/ 为拼接后的 8 窗口）
 ```
 
 > **因子线与组合层已拆出**：因子线（Weave）是独立项目，位于 [`../Weave/`](../Weave/README.md)。组合层（组合构建、回测与评分）是独立项目，位于 [`../Portfolio/`](../Portfolio/README.md)。
@@ -130,17 +128,17 @@ MFTG/
 
 ### 1. 安装环境
 ```bash
-# 基线复现与端到端线共用一个环境（PyTorch、Polars、DuckDB、LightGBM 等）
+# 基线与端到端线共用一个环境（PyTorch、Polars、DuckDB、LightGBM 等）
 pixi install
 ```
 
-### 2. 基线模型复现流程
+### 2. 基线模型流程
 ```bash
 # 1. 生成元数据与特征映射
-pixi run python baseline_src/reproduce.py metadata --data-root <path_to_ashare>
+pixi run python baseline_src/gru_baseline.py metadata --data-root <path_to_ashare>
 
 # 2. 准备全市场 15 分钟高频基底 (mmap)
-pixi run python baseline_src/reproduce.py prepare --data-root <path_to_ashare> --out full_base
+pixi run python baseline_src/gru_baseline.py prepare --data-root <path_to_ashare> --out full_base
 
 # 3. 运行滚动训练 (可选 daily / gru15 / mixed / incremental)
 pixi run python baseline_src/rolling_full.py --model daily --rounds 2024H2 --epochs 100 --seed 7
@@ -158,7 +156,7 @@ pixi run build-flow
 pixi run build-styles
 
 # 2. 训练：在 Colab 上通过 mftg/driver_mftg.py 与 mftg/upload_*.sh 完成（见 mftg/）
-# 3. 结果回收：colab/sync.sh 把预测下载到 runs/$LINE/<run>/<model>/，LINE 默认 mftg，研报复现任务用 LINE=repro
+# 3. 结果回收：colab/sync.sh 把预测下载到 runs/$LINE/<run>/<model>/，LINE 默认 mftg，基线任务用 LINE=repro
 #    会话名用 SES=<name>；临时文件在 /tmp/mftg_colab（可用 MFTG_SCRATCH 改）
 ```
 
