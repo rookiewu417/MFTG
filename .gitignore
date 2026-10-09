@@ -24,9 +24,6 @@ Thumbs.db
 
 # Large binary data & tensor caches
 build/
-build_long/
-v2/build/
-v2/build_long/
 full_base/
 artifacts*/
 data/
