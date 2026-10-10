@@ -95,7 +95,7 @@ MFTG/
 ├── baseline_early/                                   # 基线的早期窗口补训练（2022H2–2024H1）与 8 窗口拼接
 │   └── build_fullbase.py / driver_baseline.py / fullbase_dataset.py / gru_baseline.py / rolling_full.py / rep_ensemble.py
 │
-├── colab/                                   # 云端运维（env / keeper / supervisor / monitor / sync / fetch / submit / submit_jobs / status / watch / tail）
+├── colab/                                   # 云端运维（env / start / login / keeper / supervisor / monitor / sync / fetch / submit / submit_jobs / status / watch / tail；acct/ 为多账号 shim）
 │
 ├── build/                                   # 【勿动】数据产物（已 gitignore）
 │   ├── shared/                              # base/ 与 axes.npz

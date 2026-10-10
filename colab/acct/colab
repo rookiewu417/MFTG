@@ -1,0 +1,5 @@
+#!/bin/bash
+# colab CLI for a secondary Google account: the CLI keeps its token and session state under $HOME/.config/colab-cli,
+# so each account gets its own HOME (~/.colab-accounts/<COLAB_ACCT>). Put on PATH by colab/env.sh when ACCT != main.
+: "${COLAB_ACCT:?COLAB_ACCT not set}"
+exec env HOME=/home/ivenwu/.colab-accounts/$COLAB_ACCT /home/ivenwu/.local/bin/colab "$@"
