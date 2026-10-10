@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import torch
 import train_mftg
-from train_mftg import IntraEnc, epoch_days
+from train_mftg import MFTG, IntraEnc, epoch_days
 
 
 @pytest.mark.parametrize('center', [1, 2])
@@ -47,17 +47,35 @@ def _synthetic(root, T=700, N=120):
     np.save(root / 'daily.npy', (rng.normal(size=(T, N, 10)) * 0.01).astype(np.float16))
     it = (rng.normal(size=(T, N, 48, 5)) * 0.01).astype(np.float16); it[..., 4] = 1 / 48
     np.save(root / 'intra.npy', it)
+    np.save(root / 'market.npy', rng.normal(size=(T, 10)).astype(np.float32))
 
 
-def test_tiny_run_with_new_options(tmp_path):
+OPTION_SETS = [
+    ['--label', 'y5+y10+y20', '--intra_center', '1', '--half_life', '120'],
+    ['--mkt', '1', '--head', 'glu'],
+    ['--mkt', '2', '--rnn', 'lstm', '--no_intra', '1'],
+]
+
+
+@pytest.mark.parametrize('opts', OPTION_SETS, ids=lambda o: ' '.join(o))
+def test_tiny_run_with_new_options(tmp_path, opts):
     data = tmp_path / 'e2e'; _synthetic(data)
     cmd = [sys.executable, str(Path(train_mftg.__file__)), '--data', str(data), '--out', str(tmp_path / 'out'), '--name', 'tiny',
-           '--blocks', '2024H2', '--seeds', '7', '--label', 'y5+y10+y20', '--neutral', '1', '--refit', '1', '--epochs', '2',
+           '--blocks', '2024H2', '--seeds', '7', '--neutral', '1', '--refit', '1', '--epochs', '2',
            '--patience', '1', '--lookback', '20', '--days_intra', '3', '--d', '8', '--hidden', '8', '--layers', '1',
-           '--stride', '10', '--device', 'cpu', '--amp', '0', '--intra_center', '1', '--half_life', '120']
+           '--stride', '10', '--device', 'cpu', '--amp', '0'] + opts
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     assert r.returncode == 0, r.stderr[-2000:]
     z = np.load(tmp_path / 'out' / 'tiny' / '2024H2_pred.npz')
     assert np.isfinite(z['pred']).all() and z['feature_date'].min() >= 20240701 and z['feature_date'].max() <= 20241231
     a = json.loads((tmp_path / 'out' / 'tiny' / 'args.json').read_text())
-    assert a['intra_center'] == 1 and a['half_life'] == 120
+    for k, v in zip(opts[::2], opts[1::2]):
+        got = a[k[2:]]; assert (float(got) == float(v)) if isinstance(got, (int, float)) else got == v
+
+
+def test_market_gate_starts_open():
+    torch.manual_seed(0)
+    m = MFTG(d=8, h=8, layers=1, intra=False, mkt=2, nmk=10).eval()
+    d = torch.randn(5, 20, 20) * 0.01; d2 = d.clone(); d2[..., 10:] = torch.randn(5, 20, 10)   # different market state
+    with torch.no_grad():
+        assert torch.allclose(m(d, None), m(d2, None), atol=1e-6)

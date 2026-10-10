@@ -48,7 +48,7 @@ def log(*a): print(f'[{time.time()-t0:7.0f}s]', *a, flush=True)
 
 
 class Data:
-    def __init__(self, root, label, neutral, dev, lookback, days_intra, flow=False, intra=True):
+    def __init__(self, root, label, neutral, dev, lookback, days_intra, flow=False, intra=True, mkt=False):
         r = Path(root)
         ax = np.load(r / 'axes.npz', allow_pickle=True)
         self.dates = pd.DatetimeIndex(ax['dates']); self.codes = ax['codes']
@@ -64,6 +64,7 @@ class Data:
             torch.zeros((self.T, 1, 48, 5), dtype=torch.float16, device=dev).expand(-1, self.N, -1, -1)       # fp16 [T,N,48,5]
         self.daily = torch.from_numpy(np.load(r / 'daily.npy')).to(dev)                           # fp16 [T,N,10]
         self.flow = torch.from_numpy(np.load(r / 'flow.npy', mmap_mode='r')[:]).to(dev) if flow else None   # fp16 [T,N,48,2]
+        self.mkt = torch.from_numpy(np.load(r / 'market.npy')).to(dev) if mkt else None             # fp32 [T,K] (build_market.py)
         log('data on gpu', tuple(self.intra.shape), tuple(self.daily.shape), f'{time.time()-t1:.0f}s')
         self._cache = {}; self.train_start = 0; self.train_pool = 0
         self.idxm = np.load(r / 'index_member.npy', mmap_mode='r') if (r / 'index_member.npy').exists() else None
@@ -93,6 +94,7 @@ class Data:
     def x(self, t, idx):
         ii = torch.as_tensor(idx, device=self.dev)
         d = self.daily[t - self.L + 1:t + 1, ii].permute(1, 0, 2).float()                      # [B,L,10]
+        if self.mkt is not None: d = torch.cat([d, self.mkt[t - self.L + 1:t + 1].expand(len(idx), -1, -1)], -1)   # [B,L,10+K]
         it = self.intra[t - self.Di + 1:t + 1, ii].permute(1, 0, 2, 3).float()                 # [B,Di,48,5]
         if self.flow is not None:
             f = self.flow[t - self.Di + 1:t + 1, ii].permute(1, 0, 2, 3).float()               # [B,Di,48,2]
@@ -129,8 +131,20 @@ class IntraEnc(nn.Module):
         return self.norm((a.unsqueeze(-1) * h).sum(1))
 
 
+class RankGLU(nn.Module):
+    """Score head after RankGLU (arXiv 2606.08930): a linear scoring path plus a bounded gated bottleneck branch."""
+    def __init__(self, h, r=None):
+        super().__init__()
+        r = r or max(4, h // 4)
+        self.norm = nn.LayerNorm(h); self.lin = nn.Linear(h, 1)
+        self.a = nn.Linear(h, r); self.g = nn.Linear(h, r); self.out = nn.Linear(r, 1); self.drop = nn.Dropout(0.1)
+    def forward(self, x):
+        z = self.norm(x)
+        return self.lin(z) + self.out(self.drop(torch.tanh(self.a(z) * torch.sigmoid(self.g(z)))))
+
+
 class MFTG(nn.Module):
-    def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0, center=0):
+    def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0, center=0, mkt=0, nmk=10, head='mlp', rnn='gru'):
         super().__init__()
         self.use_intra = intra; self.cin = cin; self.no_daily = False
         self.xs = None
@@ -138,13 +152,19 @@ class MFTG(nn.Module):
             self.iemb = nn.Embedding(n_ind + 1, h)
             self.xs = nn.TransformerEncoder(nn.TransformerEncoderLayer(h, 4, 2 * h, 0.1, batch_first=True, norm_first=True), xs)
         self.intra = IntraEnc(d, layers, cin=cin, center=center) if intra else None
-        self.dproj = nn.Linear(10, d)
-        self.gru = nn.GRU(2 * d + 1 if intra else d, h, batch_first=True)
-        self.head = nn.Sequential(nn.LayerNorm(h), nn.Linear(h, h), nn.SiLU(), nn.Dropout(0.1), nn.Linear(h, 1))
+        self.mkt = mkt
+        self.dproj = nn.Linear(10 + (nmk if mkt == 1 else 0), d)      # mkt 1: market features as extra inputs
+        if mkt == 2:                                                   # mkt 2: market state gates the stock features (starts open)
+            self.mgate = nn.Linear(nmk, 10); nn.init.zeros_(self.mgate.weight); nn.init.zeros_(self.mgate.bias)
+        self.gru = (nn.LSTM if rnn == 'lstm' else nn.GRU)(2 * d + 1 if intra else d, h, batch_first=True)
+        self.head = RankGLU(h) if head == 'glu' else \
+            nn.Sequential(nn.LayerNorm(h), nn.Linear(h, h), nn.SiLU(), nn.Dropout(0.1), nn.Linear(h, 1))
     def forward(self, d, it, ind=None):                 # d [B,L,10], it [B,Di,48,5], ind [B] industry id + 1 (0 = none)
         B, L, _ = d.shape
-        dd = torch.cat([d[..., :4] * 30.0, d[..., 4:]], -1)
+        dd = torch.cat([d[..., :4] * 30.0, d[..., 4:10]], -1)
         if self.no_daily: dd = torch.zeros_like(dd)
+        if self.mkt == 1: dd = torch.cat([dd, d[..., 10:]], -1)
+        elif self.mkt == 2: dd = dd * 2 * torch.sigmoid(self.mgate(d[..., 10:]))
         z = self.dproj(dd)
         if self.use_intra:
             Di = it.shape[1]
@@ -192,7 +212,8 @@ def run(D, blk, seed, args):
 
     def fit(days, epochs, val_days=None):
         model = MFTG(args.d, args.hidden, args.layers, not args.no_intra, cin=8 if args.flow else 5, xs=args.xs,
-                    n_ind=int(D.ind.max()) + 1, center=args.intra_center).to(D.dev)
+                    n_ind=int(D.ind.max()) + 1, center=args.intra_center, mkt=args.mkt,
+                    nmk=D.mkt.shape[1] if D.mkt is not None else 10, head=args.head, rnn=args.rnn).to(D.dev)
         model.no_daily = bool(args.no_daily)
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
         best, best_state, best_ep, bad, hist = -1e9, None, 0, 0, []
@@ -284,12 +305,15 @@ def main():
     ap.add_argument('--flow', type=int, default=0, help='add the 15s order-flow channels (flow.npy, 2020+)')
     ap.add_argument('--intra_center', type=int, default=0, help='remove the day offset from intraday price channels: 1 = vs last close, 2 = vs mean close')
     ap.add_argument('--half_life', type=float, default=0, help='recency-weighted day sampling, half-life in trading days (0 = uniform)')
+    ap.add_argument('--mkt', type=int, default=0, help='market-state features (market.npy): 1 = extra daily inputs, 2 = gate on the stock features')
+    ap.add_argument('--head', default='mlp', choices=['mlp', 'glu'], help='score head: mlp or RankGLU')
+    ap.add_argument('--rnn', default='gru', choices=['gru', 'lstm'], help='temporal encoder')
     a = ap.parse_args()
     out = Path(a.out) / a.name; out.mkdir(parents=True, exist_ok=True)
     (out / 'args.json').write_text(json.dumps(vars(a), indent=1))
     if a.unpack: unpack_dir(a.data, a.unpack)
     if a.flow: unpack_flow(a.data)
-    D = Data(a.data, a.label, a.neutral, torch.device(a.device), a.lookback, a.days_intra, bool(a.flow), not a.no_intra)
+    D = Data(a.data, a.label, a.neutral, torch.device(a.device), a.lookback, a.days_intra, bool(a.flow), not a.no_intra, bool(a.mkt))
     D.train_start = a.train_start; D.train_pool = a.train_pool
     blocks = [b for b in BLOCKS if b[0] in a.blocks.split(',')]
     if a.monthly: blocks = [m for b in blocks for m in month_blocks(b[0])]
