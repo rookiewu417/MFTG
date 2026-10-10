@@ -13,7 +13,7 @@ polars = ">=1.0,<2"
 scipy = ">=1.12,<2"
 pytorch = ">=2.3,<3"
 duckdb = ">=1.0"
-lightgbm = ">=4.3"
+pytest = ">=8"
 
 [tasks]
 # end-to-end line
@@ -30,4 +30,5 @@ baseline-train = "python baseline_src/gru_baseline.py train"
 baseline-evaluate = "python baseline_src/gru_baseline.py evaluate"
 baseline-rolling = "python baseline_src/rolling_full.py"
 baseline-backtest = "python baseline_src/portfolio_backtest.py"
-baseline-test = { cmd = "python baseline_src/tests/test_asof_inference_export.py && python baseline_src/tests/test_factor_postprocess_asof.py" }
+baseline-test = "pytest -q baseline_src/tests"
+test = "pytest -q baseline_src/tests mftg/tests shared/tests"

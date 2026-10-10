@@ -18,7 +18,7 @@ This note records documented differences and unresolved controls between this ba
 ## Models and training
 
 - The reference design specifies one-layer GRU hidden/output dimension 30, batch size 5,000, maximum 100 epochs, patience 10, and retraining every half year. The README records hidden size 30, batch 5,000, 100/10 defaults, and Adam at learning rate 1e-3. The reference design does not specify optimizer or learning rate, so Adam/1e-3 is an implementation assumption.
-- The reference design's four comparisons are 15-minute GRU, attention GRU, daily-plus-15-minute mixed, and two-stage incremental residual learning. It trains three random seeds and equally ensembles them. The current formal three-seed rolling training is running; interim technical artifacts and the one-epoch full rolling H2 benchmark remain single-run outputs and must not be compared to the reference design's ensemble results as like-for-like.
+- The reference design's four comparisons are 15-minute GRU, attention GRU, daily-plus-15-minute mixed, and two-stage incremental residual learning. It trains three random seeds and equally ensembles them. The formal three-seed rolling training has completed (48 jobs, see `FINAL_STATUS.md`); the earlier interim technical artifacts and the one-epoch full rolling H2 benchmark are single-run outputs and must not be compared to the reference design's ensemble results as like-for-like.
 - The reference design describes incremental training as fitting the daily branch, freezing it, then fitting the minute residual. The README documents that behavior. The one-epoch full rolling daily H2 benchmark is a smoke/baseline run, not a converged implementation of the reference design's training.
 
 ## Portfolio and costs
