@@ -1,6 +1,6 @@
 # 两条研究线
 
-> 因子线代码与产物已拆到独立项目 `../../Weave/`（`weave/`、`build/weave/`、`runs/weave/`）；组合层是独立项目 `../../Portfolio/`。本文件保留两条线的完整研究时间线。
+> 因子线代码与产物已拆到独立项目 `../Weave/`（`weave/`、`build/weave/`、`runs/weave/`）；组合层是独立项目 `../Portfolio/`。本文件保留两条线的完整研究时间线。下文的 `results/*.csv` 都指 `../Portfolio/results/`。
 
 两条线共用同一套标签（t+1 开盘到 t+11 开盘，t+1 一字涨停剔除）、股票池、滚动窗口（`weave/train.py` 里的 BLOCKS）和评估方式（`shared/evaluate.py` 看 IC，`pf.py` / `round4.py` 看组合），所以结果可以直接对比，最后也可以做混合。
 
@@ -58,7 +58,7 @@
 - **MFTG-Daily-Neu**：只用日线，中性化标签，隐藏层 128。
 - **MFTG-Daily-Neu-Top1**：只用日线，中性化标签，多头加权 1，隐藏层 128。
 
-每个成员都是 3 个种子，训练集 + 验证集 refit。评分脚本是 `../../Portfolio/scorecard.py`，结果在 `results/sc_*_{A,B,C}.csv`。
+每个成员都是 3 个种子，训练集 + 验证集 refit。评分脚本是 `../Portfolio/scorecard.py`，结果在 `../Portfolio/results/sc_*_{A,B,C}.csv`。
 
 - **基线单因子口径**（全A / 沪深300 / 中证500 / 中证1000，每个池 8 项指标，共 32 项）：全部好于基线 4 个模型（incremental、daily、mixed、gru15）中各项的最好值。
   - 全A：RankIC 0.098（基线最好 0.069），IC_IR 1.07（0.88），TOP 年化超额 20.8%（7.5%），TOP 信息比率 3.92（1.08）。
@@ -103,7 +103,7 @@
 | MFTG-Daily-Neu-H256 | 日线 | 中性化 | 隐藏层 256 |
 | MFTG-Full-Neu | 日线 + 5 分钟 K 线 + 订单流 | 中性化 | 隐藏层 128，A100 训练 |
 
-单模型对基线 4 个模型最好值的胜项（`../../Portfolio/wins.py`，基线口径 32 项）：
+单模型对基线 4 个模型最好值的胜项（`../Portfolio/wins.py`，基线口径 32 项）：
 
 | 模型 | 胜项 | 没赢的项 |
 |---|---|---|
@@ -226,3 +226,4 @@
 - 成本在 20bp 以上时，换手惩罚改为 1.0 更好：收益基本不变，IR 和回撤更好（回撤 −4.6%）。加到 2.0 就过头了，降到 9%。
 - 按 VWAP 成交（20bp，惩罚 1.0）为 11.0%，IR 2.29。
 - 样本外 2026H2X（7/1–9/10）：MFTG-Ens-Neu sty5 20bp 惩罚 1.0 为 +4.8%（IR 3.3，回撤 −1.0%），30bp 为 +4.5%。MFTG-Ens-Full 相应为 +6.1% 和 +5.9%。
+

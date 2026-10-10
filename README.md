@@ -38,7 +38,6 @@
 ```
 MFTG/
 ├── README.md / LICENSE / .gitignore
-├── pixi.toml / pixi.lock                        # 基线环境（含 PyTorch）；task：metadata / prepare / train / evaluate / rolling / backtest / test
 │
 ├── docs/                                        # 文档
 │   ├── FINAL_STATUS.md                          # 基线运行终态与哈希清单
@@ -54,8 +53,7 @@ MFTG/
 │   ├── asof_inference_export.py                 # 按 feature_date 导出 as-of 预测池
 │   ├── portfolio_backtest.py                    # 严格 PIT 十分位组合回测
 │   ├── compare_feature_valid.py / inspect_dates.py   # 预测文件对比、日期检查小工具
-│   ├── tests/                                   # test_*.py（pixi run baseline-test 跑其中两个；test_portfolio_backtest.py 需 pytest）
-│   └── pixi.toml                                # 在本目录内单独运行的环境副本（与根目录相同）
+│   └── tests/                                   # test_*.py（pixi run baseline-test）
 │
 ├── baseline_ops/                                # 基线训练的远端（AutoDL）运维脚本，已完成使命，仅留档
 │   ├── auto_shutdown_guard{,_v2,_v3}.sh         # 结果导出后的关机守卫（v1 已被撤销为只做诊断）
@@ -75,18 +73,21 @@ MFTG/
 │   └── RESULT_BUNDLE_*.tar.gz、清单与日志
 │
 ├── TRACKS.md                                # 实验迭代路线图（两条线的记录同在此文件）
-├── pixi.toml / pixi.lock                    # 环境（基线与端到端共用）；task：build-base / build-mftg / build-flow / build-styles / evaluate / rep-ensemble
+├── pixi.toml / pixi.lock                    # 唯一环境（基线与端到端共用）；task：build-* / evaluate / rep-ensemble / baseline-* / test
+├── manifests/                               # build/、runs/、baseline_preds/、local_exports/ 的 sha256 清单（这些产物不进 git）
 │
 ├── shared/                                  # 共用代码
 │   ├── common.py                            # 路径常量（LAKE / OUT / SHARED）与面板工具
 │   ├── build_base.py                        # 基础面板：价格、可交易标记、行业、市值 → build/shared/base（脚本无 main 保护，import 即执行）
-│   └── evaluate.py                          # IC 评估
+│   ├── evaluate.py                          # IC 评估
+│   └── tests/                               # ST 名称记录的 PIT 假设检查
 │
 ├── mftg/                                    # MFTG 线：原始行情 → 日内 / 日线网络 → 预测
 │   ├── build_mftg.py / build_flow.py / build_styles.py   # 数据准备
 │   ├── train_mftg.py / driver_mftg.py       # 训练与 Colab 驱动
 │   ├── join_months.py / bench.py            # 月度重训拼接、速度基准
-│   └── upload_{mftg,flow,parts}.sh          # 上传脚本
+│   ├── upload_{mftg,flow,parts}.sh          # 上传脚本
+│   └── tests/                               # 滚动窗口切分无泄露检查
 │
 ├── baseline_early/                                   # 基线的早期窗口补训练（2022H2–2024H1）与 8 窗口拼接
 │   └── build_fullbase.py / driver_baseline.py / fullbase_dataset.py / gru_baseline.py / rolling_full.py / rep_ensemble.py
@@ -128,23 +129,23 @@ MFTG/
 
 ### 1. 安装环境
 ```bash
-# 基线与端到端线共用一个环境（PyTorch、Polars、DuckDB、LightGBM 等）
+# 基线与端到端线共用一个环境（PyTorch、Polars、DuckDB、pytest 等）
 pixi install
+pixi run test            # 全部测试
 ```
 
 ### 2. 基线模型流程
+基线已冻结，只作对比。正式 4 窗口（2024H2–2026H1）在 AutoDL 上用 `baseline_src/` 跑出，所需的 `full_base/`（全区间 15 分钟基底）和日缓存都没有归档，所以 `baseline_src/rolling_full.py` 在本地不能复跑正式窗口；脚本默认路径仍是当时的 `/root/autodl-tmp/...`，仅作记录。本地能复跑的是早期窗口（2022H2–2024H1）：
 ```bash
-# 1. 生成元数据与特征映射
-pixi run python baseline_src/gru_baseline.py metadata --data-root <path_to_ashare>
+# 1. 从本地湖生成 build/repro/{full_base,data}（15 分钟聚合沿用基线口径，区间到 2024-07-31）
+pixi run python baseline_early/build_fullbase.py
 
-# 2. 准备全市场 15 分钟高频基底 (mmap)
-pixi run python baseline_src/gru_baseline.py prepare --data-root <path_to_ashare> --out full_base
+# 2. 滚动训练（可选 daily / gru15 / mixed / incremental；不要传 --cache-dir，日缓存只在 AutoDL 上存在）
+cd baseline_early && pixi run python rolling_full.py --data-root ../build/repro/data --base-dir ../build/repro/full_base \
+    --out ../build/repro/rolling_daily --model daily --rounds 2022H2 --epochs 100 --seed 7
 
-# 3. 运行滚动训练 (可选 daily / gru15 / mixed / incremental)
-pixi run python baseline_src/rolling_full.py --model daily --rounds 2024H2 --epochs 100 --seed 7
-
-# 4. 运行严格 PIT 组合回测
-pixi run python baseline_src/portfolio_backtest.py --pred-file <path_to_pred.npz> --cost-bps 10
+# 3. 严格 PIT 组合回测（预测文件需含 stock_code，或 stock + codes）
+pixi run python baseline_src/portfolio_backtest.py --pred <path_to_pred.npz> --data /home/ivenwu/projects/data/ashare/daily/post_weighted.parquet --out <out_dir> --cost-bps 10
 ```
 
 ### 3. 端到端线（MFTG）流程
