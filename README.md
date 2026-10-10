@@ -80,19 +80,22 @@ MFTG/
 │   ├── common.py                            # 路径常量（LAKE / OUT / SHARED）与面板工具
 │   ├── build_base.py                        # 基础面板：价格、可交易标记、行业、市值 → build/shared/base（脚本无 main 保护，import 即执行）
 │   ├── evaluate.py                          # IC 评估
+│   ├── add_labels.py                        # 不重建面板，按同一口径补算 y<h> 标签（先校验 y5/y10）
 │   └── tests/                               # ST 名称记录的 PIT 假设检查
 │
 ├── mftg/                                    # MFTG 线：原始行情 → 日内 / 日线网络 → 预测
 │   ├── build_mftg.py / build_flow.py / build_styles.py   # 数据准备
 │   ├── train_mftg.py / driver_mftg.py       # 训练与 Colab 驱动
 │   ├── join_months.py / bench.py            # 月度重训拼接、速度基准
+│   ├── pack.sh                              # 重打 Colab 数据包（build/mftg/upload_e2e{,_daily}）
+│   ├── ens_icw.py                           # 成员按滚动 IC 加权的集成（第三轮 E4，未采用）
 │   ├── upload_{mftg,flow,parts}.sh          # 上传脚本
 │   └── tests/                               # 滚动窗口切分无泄露检查
 │
 ├── baseline_early/                                   # 基线的早期窗口补训练（2022H2–2024H1）与 8 窗口拼接
 │   └── build_fullbase.py / driver_baseline.py / fullbase_dataset.py / gru_baseline.py / rolling_full.py / rep_ensemble.py
 │
-├── colab/                                   # 云端运维（env / keeper / supervisor / monitor / sync / fetch / submit / status / watch / tail）
+├── colab/                                   # 云端运维（env / keeper / supervisor / monitor / sync / fetch / submit / submit_jobs / status / watch / tail）
 │
 ├── build/                                   # 【勿动】数据产物（已 gitignore）
 │   ├── shared/                              # base/ 与 axes.npz
