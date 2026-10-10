@@ -5,21 +5,23 @@ from portfolio_backtest import run_backtest, simulate_layer
 
 
 def test_missing_open_close_defers_and_marks_last():
-    dates = pd.date_range("2024-01-01", periods=4)
+    dates = pd.date_range("2024-01-01", periods=7)
     opens = [
         {"A": 10.0},
         {"A": np.nan, "B": 20.0},  # A cannot be sold; B can be bought
         {"A": 12.0, "B": np.nan},  # deferred A sale, B remains held
         {"A": 13.0, "B": 22.0},
+        {"A": 13.0, "B": 22.0}, {"A": 13.0, "B": 22.0}, {"A": 13.0, "B": 22.0},
     ]
     closes = [
         {"A": 10.0, "B": 20.0},
         {"A": 11.0, "B": np.nan},
         {"A": np.nan, "B": 21.0},
         {"A": 13.0, "B": 22.0},
+        {"A": 13.0, "B": 22.0}, {"A": 13.0, "B": 22.0}, {"A": 13.0, "B": 22.0},
     ]
     out = simulate_layer({0: {"A"}, 1: {"B"}}, dates, opens, closes, 0.001)
-    assert out.n_holdings.tolist() == [1, 2, 1, 1]
+    assert out.n_holdings.tolist() == [1, 2, 1, 1, 1, 1, 1]
     assert out.cash.iloc[1] < 1.0
     assert np.isfinite(out.nav).all()
     assert out.cost_paid.iloc[2] > 0  # deferred sale executes on recovery
