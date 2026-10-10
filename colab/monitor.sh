@@ -54,7 +54,7 @@ while [ -n "$SESS" ]; do
     echo
   done
   echo "本地预测文件: $(find /home/ivenwu/projects/MFTG/runs/mftg -newer $K/.round_start -name '*_pred.npz' | wc -l) 个（本轮新增）"
-  for x in $(echo $SESS | tr ' ' '\n' | sort -u); do echo "$x [$(acct $x)]: $(timeout 60 colab_as $x usage 2>/dev/null | head -n 2 | tr '\n' ' ')"; echo; done
+  for x in $(echo $SESS | tr ' ' '\n' | sort -u); do echo "$x [$(acct $x)]: $(colab_as $x usage 2>/dev/null | head -n 2 | tr '\n' ' ')"; echo; done
   } > $K/STATUS.md.tmp && mv $K/STATUS.md.tmp $K/STATUS.md
   SESS=$(echo $next)
   [ -n "$SESS" ] && sleep 600
