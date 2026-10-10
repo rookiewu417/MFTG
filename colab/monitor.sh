@@ -4,11 +4,13 @@
 # Writes build/keeper/STATUS.md; appends ALERT lines to build/keeper/alerts.log for: session gone before its supervisor
 # finished, failed jobs (critical ones re-queued as <tag>_r1/_r2, max 2), running job whose log has not grown for 60 min.
 K=/home/ivenwu/projects/MFTG/build/keeper; SESS="$*"
+acct() { cat $K/account_$1 2>/dev/null || echo main; }
+colab_as() { local a=$(acct $1); shift; if [ "$a" = main ]; then colab "$@"; else COLAB_ACCT=$a /home/ivenwu/projects/MFTG/colab/acct/colab "$@"; fi; }
 alert() { echo "$(date '+%F %T') ALERT $*" >> $K/alerts.log; }
 note() { echo "$(date '+%F %T') $*" >> $K/alerts.log; }
 note "monitor start: $SESS"
 while [ -n "$SESS" ]; do
-  live=$(colab sessions 2>/dev/null); next=""
+  live=$(for x in $SESS; do colab_as $x sessions; done 2>/dev/null); next=""      # each session listed under its own account
   {
   echo "# Colab 训练状态 $(date '+%F %T')"; echo
   for SES in $SESS; do
@@ -41,7 +43,7 @@ while [ -n "$SESS" ]; do
         if [ "$prio" = critical ] && [ $n -le 2 ]; then
           new="${base}_r$n"; tmp=$K/$new.json
           printf '{"tag": "%s", "lane": %s, "args": "%s", "out": "%s", "script": "%s"}\n' "$new" "$lane" "$args" "$out" "$script" > $tmp
-          if colab upload -s $SES $tmp /content/queue/90_$new.json 2>&1 | grep -q Uploaded; then
+          if colab_as $SES upload -s $SES $tmp /content/queue/90_$new.json 2>&1 | grep -q Uploaded; then
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$new" "$lane" "$args" "$out" "$script" "$prio" >> $J
             alert "$SES $tag failed ($err) -> resubmitted as $new on lane $lane"
           else alert "$SES $tag failed ($err) -> resubmit upload FAILED"; fi
@@ -52,7 +54,7 @@ while [ -n "$SESS" ]; do
     echo
   done
   echo "本地预测文件: $(find /home/ivenwu/projects/MFTG/runs/mftg -newer $K/.round_start -name '*_pred.npz' | wc -l) 个（本轮新增）"
-  echo "$(timeout 60 colab usage 2>/dev/null | head -n 2 | tr '\n' ' ')"
+  for x in $(echo $SESS | tr ' ' '\n' | sort -u); do echo "$x [$(acct $x)]: $(timeout 60 colab_as $x usage 2>/dev/null | head -n 2 | tr '\n' ' ')"; echo; done
   } > $K/STATUS.md.tmp && mv $K/STATUS.md.tmp $K/STATUS.md
   SESS=$(echo $next)
   [ -n "$SESS" ] && sleep 600

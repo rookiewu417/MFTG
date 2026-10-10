@@ -249,13 +249,21 @@
 
 提升约 0.0003，远低于 0.008 的门槛，继续用等权。这里的 RankIC 是全部预测日每 5 日取一个截面，口径和 `shared/evaluate.py` 不同，只能横向比较。
 
-**运行 E1–E3**：
+**运行 E1–E3**（会话可以分到不同 Google 账号，见 `colab/login.sh`、`colab/start.sh`）：
+
+| 会话 | 账号 | GPU | 任务 |
+|---|---|---|---|
+| e2eD1 | main | L4 | dL510、dL52010、dHL250、dHL500（`jobs_e2eD1.tsv`） |
+| e2eF1 | main | A100 | fC1（`jobs_e2eF1.tsv`） |
+| e2eF2 | — | A100 | fC2（`jobs_e2eF2.tsv`）：暂不跑。第二个账号余额为 0，主账号额度只够 e2eD1 + e2eF1；fC1 有效再补 |
+
 ```bash
-mftg/pack.sh                                   # 已重打（含 y20）
-# 日线组 e2eD1（4 条 lane）
-SES=e2eD1 mftg/upload_parts.sh "build/mftg/upload_e2e_daily/e2e.tgz.part*" UPLOAD_DONE
-colab/submit_jobs.sh e2eD1
-# 日内组 e2eF1（需要订单流，建议 A100）
-SES=e2eF1 mftg/upload_mftg.sh && SES=e2eF1 mftg/upload_flow.sh
-colab/submit_jobs.sh e2eF1
+mftg/pack.sh                                                    # 已重打（含 y20）
+colab/login.sh alt                                              # 第二个账号，只需一次（交互式）
+ACCT=main colab/start.sh e2eD1 L4                               # 建会话 + driver + keeper + supervisor
+SES=e2eD1 mftg/upload_parts.sh "build/mftg/upload_e2e_daily/e2e.tgz.part*" UPLOAD_DONE && colab/submit_jobs.sh e2eD1
+ACCT=main colab/start.sh e2eF1 A100
+SES=e2eF1 mftg/upload_mftg.sh && SES=e2eF1 mftg/upload_flow.sh && colab/submit_jobs.sh e2eF1
+ACCT=alt colab/start.sh e2eF2 A100                              # （暂不跑）之后同 e2eF1
+setsid nohup colab/monitor.sh e2eD1 e2eF1 &               # 状态写到 build/keeper/STATUS.md
 ```
