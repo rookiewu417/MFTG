@@ -1,13 +1,5 @@
 #!/bin/bash
+# usage: SES=<session> [PACK=e2e|e2e_daily] mftg/upload_mftg.sh   -> uploads train_mftg.py and build/mftg/upload_$PACK (see mftg/pack.sh)
 cd /home/ivenwu/projects/MFTG
-mkdir -p ${MFTG_SCRATCH:-/tmp/mftg_colab}
-
-for f in mftg/train_mftg.py; do colab upload -s ${SES:-e2e1} $f /content/code/$(basename $f) 2>&1 | grep -i "fail" ; done
-for p in build/mftg/upload_e2e/e2e.tgz.part*; do
-  for try in 1 2 3 4 5; do
-    if colab upload -s ${SES:-e2e1} $p /content/up/$(basename $p) 2>&1 | grep -q Uploaded; then echo "ok $(basename $p) $(date +%T)"; break; fi
-    echo "retry $try $(basename $p)"; sleep 5
-  done
-done
-echo UPLOAD_DONE
-echo done > ${MFTG_SCRATCH:-/tmp/mftg_colab}/UPLOAD_DONE; colab upload -s ${SES:-e2e1} ${MFTG_SCRATCH:-/tmp/mftg_colab}/UPLOAD_DONE /content/up/UPLOAD_DONE 2>&1 | grep -i upload
+. /home/ivenwu/projects/MFTG/colab/env.sh
+exec mftg/upload_parts.sh "build/mftg/upload_${PACK:-e2e}/e2e.tgz.part*" UPLOAD_DONE

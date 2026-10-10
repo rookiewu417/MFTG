@@ -227,3 +227,35 @@
 - 按 VWAP 成交（20bp，惩罚 1.0）为 11.0%，IR 2.29。
 - 样本外 2026H2X（7/1–9/10）：MFTG-Ens-Neu sty5 20bp 惩罚 1.0 为 +4.8%（IR 3.3，回撤 −1.0%），30bp 为 +4.5%。MFTG-Ens-Full 相应为 +6.1% 和 +5.9%。
 
+## 第三轮：外部调研后的四个方向（2026-10-10）
+
+调研了端到端选股的论文、开源项目和券商研报，挑出四个此前没试过、改动小的方向。对照组固定为 MFTG-Daily-Neu（单模型）和 MFTG-Ens-Neu（集成），都是 3 个种子、8 个窗口。采用标准：全A RankIC 提升超过 0.008（约种子噪声的 2 倍），8 个窗口中至少 6 个为正，sty5 组合不变差。2026H2X 只在最后确认时看一次。
+
+| 编号 | 方向 | 依据 | 改动 | 任务 |
+|---|---|---|---|---|
+| E1 | 日内价格通道去偏移 | arXiv 2609.07122（CSI300 5 分钟，centering 带来稳定增益） | `--intra_center 1`（减当日最后收盘）/ `2`（减当日均值）。原通道是 ln(价格/前收)，每根 K 线都带着当天涨跌，和日线分支重复 | `jobs_e2eF1.tsv`：fC1、fC2，对照 MFTG-Full-Neu |
+| E2 | 多期限标签 | Label Horizon Paradox（arXiv 2602.03395）、广发多周期模型 | `--label y5+y10`、`y5+y20+y10`（rank-gauss 后平均，验证仍看 y10）。标签截止日按最长标签算（`LABEL_H`），y20 由 `shared/add_labels.py` 补算 | `jobs_e2eD1.tsv`：dL510、dL52010 |
+| E3 | 近期样本加权 | Ubiquant 第 1 名只用近期数据、因子半衰期研究 | `--half_life N`：每个 epoch 按权重有放回抽训练日，权重每 N 个交易日减半 | `jobs_e2eD1.tsv`：dHL250、dHL500 |
+| E4 | 集成按滚动 IC 加权 | AlphaForge（AAAI 2025） | `mftg/ens_icw.py`，离线 | 已完成，见下 |
+
+**E4 结果：不采用。** 4 个成员按已实现的 RankIC（y10，标签已知后才计入）做 EWMA 加权，负值截为 0。权重始终接近等权（每个成员 0.19–0.33；MFTG-Daily-Neu-CSI800 在 2025 年后最低，MFTG-Full-Neu 最高）。8 个窗口、周频截面：
+
+| 集成 | RankIC | 前 10% 年化超额（y10，未扣费） |
+|---|---|---|
+| 等权（MFTG-Ens-Neu） | 0.1229 | 12.6% |
+| IC 加权，半衰期 60 日 | 0.1231 | 12.8% |
+| IC 加权，半衰期 120 日 | 0.1232 | 12.7% |
+| IC 加权，半衰期 250 日 | 0.1232 | 12.8% |
+
+提升约 0.0003，远低于 0.008 的门槛，继续用等权。这里的 RankIC 是全部预测日每 5 日取一个截面，口径和 `shared/evaluate.py` 不同，只能横向比较。
+
+**运行 E1–E3**：
+```bash
+mftg/pack.sh                                   # 已重打（含 y20）
+# 日线组 e2eD1（4 条 lane）
+SES=e2eD1 mftg/upload_parts.sh "build/mftg/upload_e2e_daily/e2e.tgz.part*" UPLOAD_DONE
+colab/submit_jobs.sh e2eD1
+# 日内组 e2eF1（需要订单流，建议 A100）
+SES=e2eF1 mftg/upload_mftg.sh && SES=e2eF1 mftg/upload_flow.sh
+colab/submit_jobs.sh e2eF1
+```

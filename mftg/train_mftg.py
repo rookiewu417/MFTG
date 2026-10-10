@@ -16,6 +16,7 @@ from torch import nn
 from scipy.special import ndtri
 
 H = 11
+LABEL_H = {'y5': 6, 'y10': 11, 'y20': 21}   # label end = open of t+H; split() keeps every label inside its window
 BLOCKS = [  # name, test_start, test_end, val_start, val_label_end, train_label_end  (same as weave/train.py)
     ('2024H2', 20240701, 20241231, 20230703, 20240628, 20230630),
     ('2025H1', 20250101, 20250630, 20240101, 20241231, 20231229),
@@ -54,9 +55,10 @@ class Data:
         self.dint = self.dates.strftime('%Y%m%d').astype(int).to_numpy()
         self.T, self.N = len(self.dates), len(self.codes)
         self.univ = np.load(r / 'univ.npy'); self.ys = [np.load(r / f'{l}.npy') for l in label.split('+')]; self.y = self.ys[-1]
+        self.H = max(LABEL_H[l] for l in label.split('+'))
         self.ind = np.load(r / 'industry.npy'); self.lmv = np.load(r / 'log_circ_mv.npy')
         self.neutral = neutral; self.dev = dev; self.L = lookback; self.Di = days_intra
-        self.lend = np.array([self.dint[t + H] if t + H < self.T else 99999999 for t in range(self.T)])
+        self.lend = np.array([self.dint[t + self.H] if t + self.H < self.T else 99999999 for t in range(self.T)])
         t1 = time.time()
         self.intra = torch.from_numpy(np.load(r / 'intra.npy', mmap_mode='r')[:]).to(dev) if intra else \
             torch.zeros((self.T, 1, 48, 5), dtype=torch.float16, device=dev).expand(-1, self.N, -1, -1)       # fp16 [T,N,48,5]
@@ -110,28 +112,32 @@ class Data:
 
 
 class IntraEnc(nn.Module):
-    def __init__(self, d=32, layers=2, heads=4, cin=5):
+    def __init__(self, d=32, layers=2, heads=4, cin=5, center=0):
         super().__init__()
+        self.center = center
         self.inp = nn.Linear(cin, d); self.pos = nn.Parameter(torch.zeros(48, d))
         layer = nn.TransformerEncoderLayer(d, heads, 2 * d, dropout=0.1, batch_first=True, norm_first=True)
         self.enc = nn.TransformerEncoder(layer, layers)
         self.q = nn.Parameter(torch.randn(d) / d ** 0.5); self.norm = nn.LayerNorm(d)
     def forward(self, x):                               # x [M,48,5] -> [M,d]
-        x = torch.cat([x[..., :4] * 30.0, x[..., 4:5] * 48.0 - 1.0, x[..., 5:]], -1)
+        px = x[..., :4]                                 # ln(price / previous close): every bar carries the day's offset
+        if self.center == 1: px = px - x[:, -1:, 3:4]                       # relative to the day's last close
+        elif self.center == 2: px = px - x[..., 3:4].mean(1, keepdim=True)  # relative to the day's mean close
+        x = torch.cat([px * 30.0, x[..., 4:5] * 48.0 - 1.0, x[..., 5:]], -1)
         h = self.enc(self.inp(x) + self.pos)
         a = torch.softmax(h @ self.q / h.shape[-1] ** 0.5, dim=1)
         return self.norm((a.unsqueeze(-1) * h).sum(1))
 
 
 class MFTG(nn.Module):
-    def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0):
+    def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0, center=0):
         super().__init__()
         self.use_intra = intra; self.cin = cin; self.no_daily = False
         self.xs = None
         if xs:      # cross-sectional layer: each stock attends to the other stocks of the same day (+ industry embedding)
             self.iemb = nn.Embedding(n_ind + 1, h)
             self.xs = nn.TransformerEncoder(nn.TransformerEncoderLayer(h, 4, 2 * h, 0.1, batch_first=True, norm_first=True), xs)
-        self.intra = IntraEnc(d, layers, cin=cin) if intra else None
+        self.intra = IntraEnc(d, layers, cin=cin, center=center) if intra else None
         self.dproj = nn.Linear(10, d)
         self.gru = nn.GRU(2 * d + 1 if intra else d, h, batch_first=True)
         self.head = nn.Sequential(nn.LayerNorm(h), nn.Linear(h, h), nn.SiLU(), nn.Dropout(0.1), nn.Linear(h, 1))
@@ -151,6 +157,15 @@ class MFTG(nn.Module):
         h = o[:, -1]
         if self.xs is not None: h = self.xs((h + self.iemb(ind)).unsqueeze(0))[0]
         return self.head(h).squeeze(-1)
+
+
+def epoch_days(days, rng, half_life=0):
+    """Training days for one epoch: a permutation, or with half_life > 0 (trading days) the same number of days drawn
+    with replacement, weight halving every half_life days back from the newest training day."""
+    days = np.asarray(days)
+    if half_life <= 0: return rng.permutation(days)
+    w = 0.5 ** ((days.max() - days) / half_life)
+    return rng.choice(days, size=len(days), replace=True, p=w / w.sum())
 
 
 def corr_loss(p, y, w):
@@ -177,14 +192,14 @@ def run(D, blk, seed, args):
 
     def fit(days, epochs, val_days=None):
         model = MFTG(args.d, args.hidden, args.layers, not args.no_intra, cin=8 if args.flow else 5, xs=args.xs,
-                    n_ind=int(D.ind.max()) + 1).to(D.dev)
+                    n_ind=int(D.ind.max()) + 1, center=args.intra_center).to(D.dev)
         model.no_daily = bool(args.no_daily)
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
         best, best_state, best_ep, bad, hist = -1e9, None, 0, 0, []
         rng = np.random.default_rng(seed)
         for ep in range(epochs):
             model.train(); losses = []; te = time.time()
-            for t in rng.permutation(days):
+            for t in epoch_days(days, rng, args.half_life):
                 q = D.day(t)
                 if 'z' not in q: continue
                 n = len(q['idx']); sel = rng.choice(n, min(n, args.max_batch), replace=False)
@@ -267,6 +282,8 @@ def main():
     ap.add_argument('--xs', type=int, default=0, help='cross-sectional attention layers over the stocks of a day (prediction uses the whole day)')
     ap.add_argument('--monthly', type=int, default=0, help='refit every month inside each block (outputs M<yyyymm>_pred.npz)')
     ap.add_argument('--flow', type=int, default=0, help='add the 15s order-flow channels (flow.npy, 2020+)')
+    ap.add_argument('--intra_center', type=int, default=0, help='remove the day offset from intraday price channels: 1 = vs last close, 2 = vs mean close')
+    ap.add_argument('--half_life', type=float, default=0, help='recency-weighted day sampling, half-life in trading days (0 = uniform)')
     a = ap.parse_args()
     out = Path(a.out) / a.name; out.mkdir(parents=True, exist_ok=True)
     (out / 'args.json').write_text(json.dumps(vars(a), indent=1))
