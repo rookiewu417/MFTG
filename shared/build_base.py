@@ -54,13 +54,14 @@ first_seen = np.argmax(traded, axis=0)
 list_pos = np.array([dates.searchsorted(ld.get(cd, pd.NaT)) if pd.notna(ld.get(cd, pd.NaT)) else first_seen[j] for j, cd in enumerate(codes)])
 age = np.arange(T)[:, None] - list_pos[None, :]          # trading days since listing (negative before listing)
 st = np.zeros((T, N), bool)
-nm = c.sql(f"select ts_code, name, start_date, end_date from '{LAKE}/meta/name.parquet'").df()
+nm = c.sql(f"select ts_code, name, start_date, end_date, ann_date from '{LAKE}/meta/name.parquet'").df()
 nm = nm[nm.name.str.contains('ST|退', regex=True, na=False)]
 cidx = pd.Index(codes)
 for r in nm.itertuples():
     j = cidx.get_indexer([r.ts_code])[0]
     if j < 0: continue
-    a = dates.searchsorted(pd.Timestamp(r.start_date))
+    # ST is known from max(start_date, ann_date); in the 2026-09 lake ann_date <= start_date always, so this equals start_date
+    a = dates.searchsorted(max(pd.Timestamp(r.start_date), pd.Timestamp(r.ann_date) if pd.notna(r.ann_date) else pd.Timestamp(r.start_date)))
     b = T if pd.isna(r.end_date) else dates.searchsorted(pd.Timestamp(r.end_date), side='right')
     st[a:b, j] = True
 univ = traded & ~st & (age >= 120)

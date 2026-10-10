@@ -57,7 +57,7 @@ def run_backtest(pred_path, data_path, out_dir, start=None, end=None,
     # ``holding_days`` is retained for API compatibility; positions are held
     # until the next valid signal or the clipped backtest end.
     z = np.load(pred_path, allow_pickle=False)
-    required = {"pred", "feature_date", "valid", "stock"}
+    required = {"pred", "feature_date", "valid"}
     missing = required - set(z.files)
     if missing:
         raise ValueError(f"prediction file missing keys: {sorted(missing)}")
@@ -77,6 +77,8 @@ def run_backtest(pred_path, data_path, out_dir, start=None, end=None,
                                 pd.read_csv(cp, header=None).iloc[:, 0]).astype(str)
     else:
         raise ValueError("prediction stock ids require explicit NPZ codes or --codes mapping")
+    if not direct_codes:
+        stock = np.asarray(z["stock"], int)
     d = pd.read_parquet(data_path, columns=["trade_date", "ts_code", "open", "close", "adj_factor"])
     d["trade_date"] = pd.to_datetime(d["trade_date"])
     if start is not None:
@@ -92,6 +94,7 @@ def run_backtest(pred_path, data_path, out_dir, start=None, end=None,
     cl = d.pivot(index="trade_date", columns="ts_code", values="close").reindex(index=dates, columns=codes).to_numpy(float)
     if not direct_codes and len(stock) and np.nanmax(stock) >= len(codes):
         raise ValueError("stock ids exceed sorted market-code universe")
+    row_ids = np.array([int(np.flatnonzero(codes == c)[0]) for c in row_codes], dtype=int) if direct_codes else stock
     di = {_date_int(x): i for i, x in enumerate(dates)}
     lo = _date_int(start) if start else int(fdate.min())
     hi = _date_int(end) if end else int(fdate.max())
@@ -111,7 +114,7 @@ def run_backtest(pred_path, data_path, out_dir, start=None, end=None,
             continue
         order = q[np.argsort(pred[q], kind="mergesort")]
         groups = np.array_split(order, 10)
-        new_holdings = [set(int(np.flatnonzero(codes == (row_codes[j] if direct_codes else codes[stock[j]]))[0]) for j in g) for g in groups]
+        new_holdings = [set(int(row_ids[j]) for j in g) for g in groups]
         entry_i = i + 1
         next_i = di[signal_days[si + 1]] + 1 if si + 1 < len(signal_days) else calendar_end_i
         exit_i = min(next_i, calendar_end_i)
@@ -145,7 +148,7 @@ def run_backtest(pred_path, data_path, out_dir, start=None, end=None,
             if len(q) < 10 or di[sd] + 1 >= len(dates): continue
             order = q[np.argsort(pred[q], kind="mergesort")]
             for layer, g in enumerate(np.array_split(order, 10)):
-                target_maps[layer][di[sd] + 1] = set(int(stock[j]) for j in g)
+                target_maps[layer][di[sd] + 1] = set(int(row_ids[j]) for j in g)
         full = []
         for layer in range(10):
             sim = simulate_layer(target_maps[layer], dates, [dict(enumerate(op[t])) for t in range(len(dates))],

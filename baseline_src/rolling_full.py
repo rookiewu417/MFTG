@@ -2,8 +2,6 @@ from pathlib import Path
 import argparse,json,time,hashlib
 import numpy as np, torch
 import gru_baseline
-import normalized_cache
-import stored_npz_loader
 from fullbase_dataset import FullBase
 
 BLOCKS=[('2024H2',20240701,20241231,20230703,20240628,20230630),('2025H1',20250101,20250630,20240101,20241231,20231229),('2025H2',20250701,20251231,20240701,20250630,20240628),('2026H1',20260101,20260630,20250101,20251231,20241231)]
@@ -13,7 +11,9 @@ def model_for(name):
 
 def get_day(ds,di,name,cache_dir=None,stage=None,ram_cache=False,cache_backend='npz'):
     need15=(name!='daily' and stage!='daily'); needd=(name!='gru15')
-    if cache_dir:
+    if cache_dir:   # day caches lived only on the AutoDL box; normalized_cache / stored_npz_loader were not archived
+        try: import normalized_cache, stored_npz_loader
+        except ImportError as e: raise SystemExit(f'--cache-dir needs the AutoDL-only cache loaders ({e}); run without --cache-dir') from e
         if cache_backend=='npz':
             q=normalized_cache.load_day(cache_dir,int(ds.date_int[di]),need_x15=need15,need_xd=needd,ram_cache=ram_cache)
         elif cache_backend=='mmap':

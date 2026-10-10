@@ -12,7 +12,9 @@ def model_for(name):
 
 def get_day(ds,di,name,cache_dir=None,stage=None,ram_cache=False,cache_backend='npz'):
     need15=(name!='daily' and stage!='daily'); needd=(name!='gru15')
-    if cache_dir:
+    if cache_dir:   # day caches lived only on the AutoDL box; normalized_cache / stored_npz_loader were not archived
+        try: import normalized_cache, stored_npz_loader
+        except ImportError as e: raise SystemExit(f'--cache-dir needs the AutoDL-only cache loaders ({e}); run without --cache-dir') from e
         if cache_backend=='npz':
             q=normalized_cache.load_day(cache_dir,int(ds.date_int[di]),need_x15=need15,need_xd=needd,ram_cache=ram_cache)
         elif cache_backend=='mmap':

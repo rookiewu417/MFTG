@@ -72,7 +72,7 @@ def eval_block(df, eval_dates, sub_mask=None, cost=0.001):
         top, bot = j[o[-k:]], j[o[:k]]
         r['top_ex10'] = np.nanmean(y10[t, top]) - np.nanmean(yy)
         r['ls10'] = np.nanmean(y10[t, top]) - np.nanmean(y10[t, bot])
-        h = np.nan_to_num(y5[t, top]); bench = np.nanmean(y5[t, j])
+        h = np.nan_to_num(y5[t, top]); bench = np.nan_to_num(y5[t, j]).mean()   # missing hold return (suspended at t+6) counts as 0 on both sides
         to = 1.0 if prev_top is None else 1 - len(np.intersect1d(top, prev_top)) / len(top)
         r['turnover'] = to
         r['port_gross'] = h.mean(); r['port_net'] = h.mean() - 2 * cost * to; r['bench'] = bench
