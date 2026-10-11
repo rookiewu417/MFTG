@@ -2,6 +2,7 @@
 
 Data (from mftg/build_mftg.py + base panels) under --data:
   axes.npz, intra.npy [T,N,48,5] fp16, daily.npy [T,N,10] fp16, univ.npy, y10.npy, y5.npy, industry.npy, log_circ_mv.npy
+  (--extra: extra.npy [T,N,K] fp16 from build_extra.py, appended to the daily inputs)
 Model: per-day intraday Transformer over 48 bars -> attention-pooled day vector (last --days_intra days);
        GRU over the last --lookback days of [daily bar embedding, intraday day vector, has-intraday flag] -> score.
 Loss: -IC against the rank-gauss label (optionally industry+size neutralised, optionally top-quintile weighted),
@@ -48,7 +49,7 @@ def log(*a): print(f'[{time.time()-t0:7.0f}s]', *a, flush=True)
 
 
 class Data:
-    def __init__(self, root, label, neutral, dev, lookback, days_intra, flow=False, intra=True, mkt=False):
+    def __init__(self, root, label, neutral, dev, lookback, days_intra, flow=False, intra=True, mkt=False, extra=False):
         r = Path(root)
         ax = np.load(r / 'axes.npz', allow_pickle=True)
         self.dates = pd.DatetimeIndex(ax['dates']); self.codes = ax['codes']
@@ -65,6 +66,8 @@ class Data:
         self.daily = torch.from_numpy(np.load(r / 'daily.npy')).to(dev)                           # fp16 [T,N,10]
         self.flow = torch.from_numpy(np.load(r / 'flow.npy', mmap_mode='r')[:]).to(dev) if flow else None   # fp16 [T,N,48,2]
         self.mkt = torch.from_numpy(np.load(r / 'market.npy')).to(dev) if mkt else None             # fp32 [T,K] (build_market.py)
+        self.extra = torch.from_numpy(np.load(r / 'extra.npy')).to(dev) if extra else None            # fp16 [T,N,K] (build_extra.py)
+        self.nx = self.extra.shape[2] if extra else 0
         log('data on gpu', tuple(self.intra.shape), tuple(self.daily.shape), f'{time.time()-t1:.0f}s')
         self._cache = {}; self.train_start = 0; self.train_pool = 0
         self.idxm = np.load(r / 'index_member.npy', mmap_mode='r') if (r / 'index_member.npy').exists() else None
@@ -94,6 +97,7 @@ class Data:
     def x(self, t, idx):
         ii = torch.as_tensor(idx, device=self.dev)
         d = self.daily[t - self.L + 1:t + 1, ii].permute(1, 0, 2).float()                      # [B,L,10]
+        if self.extra is not None: d = torch.cat([d, self.extra[t - self.L + 1:t + 1, ii].permute(1, 0, 2).float()], -1)   # [B,L,10+nx]
         if self.mkt is not None: d = torch.cat([d, self.mkt[t - self.L + 1:t + 1].expand(len(idx), -1, -1)], -1)   # [B,L,10+K]
         it = self.intra[t - self.Di + 1:t + 1, ii].permute(1, 0, 2, 3).float()                 # [B,Di,48,5]
         if self.flow is not None:
@@ -144,7 +148,7 @@ class RankGLU(nn.Module):
 
 
 class MFTG(nn.Module):
-    def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0, center=0, mkt=0, nmk=10, head='mlp', rnn='gru'):
+    def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0, center=0, mkt=0, nmk=10, head='mlp', rnn='gru', nx=0):
         super().__init__()
         self.use_intra = intra; self.cin = cin; self.no_daily = False
         self.xs = None
@@ -152,8 +156,8 @@ class MFTG(nn.Module):
             self.iemb = nn.Embedding(n_ind + 1, h)
             self.xs = nn.TransformerEncoder(nn.TransformerEncoderLayer(h, 4, 2 * h, 0.1, batch_first=True, norm_first=True), xs)
         self.intra = IntraEnc(d, layers, cin=cin, center=center) if intra else None
-        self.mkt = mkt
-        self.dproj = nn.Linear(10 + (nmk if mkt == 1 else 0), d)      # mkt 1: market features as extra inputs
+        self.mkt = mkt; self.nx = nx                                   # nx extra per-stock daily inputs (after the 10 bars)
+        self.dproj = nn.Linear(10 + nx + (nmk if mkt == 1 else 0), d)  # mkt 1: market features as extra inputs
         if mkt == 2:                                                   # mkt 2: market state gates the stock features (starts open)
             self.mgate = nn.Linear(nmk, 10); nn.init.zeros_(self.mgate.weight); nn.init.zeros_(self.mgate.bias)
         self.gru = (nn.LSTM if rnn == 'lstm' else nn.GRU)(2 * d + 1 if intra else d, h, batch_first=True)
@@ -161,10 +165,11 @@ class MFTG(nn.Module):
             nn.Sequential(nn.LayerNorm(h), nn.Linear(h, h), nn.SiLU(), nn.Dropout(0.1), nn.Linear(h, 1))
     def forward(self, d, it, ind=None):                 # d [B,L,10], it [B,Di,48,5], ind [B] industry id + 1 (0 = none)
         B, L, _ = d.shape
-        dd = torch.cat([d[..., :4] * 30.0, d[..., 4:10]], -1)
+        k = 10 + self.nx
+        dd = torch.cat([d[..., :4] * 30.0, d[..., 4:k]], -1)
         if self.no_daily: dd = torch.zeros_like(dd)
-        if self.mkt == 1: dd = torch.cat([dd, d[..., 10:]], -1)
-        elif self.mkt == 2: dd = dd * 2 * torch.sigmoid(self.mgate(d[..., 10:]))
+        if self.mkt == 1: dd = torch.cat([dd, d[..., k:]], -1)
+        elif self.mkt == 2: dd = torch.cat([dd[..., :10] * 2 * torch.sigmoid(self.mgate(d[..., k:])), dd[..., 10:]], -1)
         z = self.dproj(dd)
         if self.use_intra:
             Di = it.shape[1]
@@ -213,7 +218,7 @@ def run(D, blk, seed, args):
     def fit(days, epochs, val_days=None):
         model = MFTG(args.d, args.hidden, args.layers, not args.no_intra, cin=8 if args.flow else 5, xs=args.xs,
                     n_ind=int(D.ind.max()) + 1, center=args.intra_center, mkt=args.mkt,
-                    nmk=D.mkt.shape[1] if D.mkt is not None else 10, head=args.head, rnn=args.rnn).to(D.dev)
+                    nmk=D.mkt.shape[1] if D.mkt is not None else 10, head=args.head, rnn=args.rnn, nx=D.nx).to(D.dev)
         model.no_daily = bool(args.no_daily)
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
         best, best_state, best_ep, bad, hist = -1e9, None, 0, 0, []
@@ -308,12 +313,13 @@ def main():
     ap.add_argument('--mkt', type=int, default=0, help='market-state features (market.npy): 1 = extra daily inputs, 2 = gate on the stock features')
     ap.add_argument('--head', default='mlp', choices=['mlp', 'glu'], help='score head: mlp or RankGLU')
     ap.add_argument('--rnn', default='gru', choices=['gru', 'lstm'], help='temporal encoder')
+    ap.add_argument('--extra', type=int, default=0, help='append the extra per-stock daily inputs (extra.npy: money flow, margin, reports, valuation)')
     a = ap.parse_args()
     out = Path(a.out) / a.name; out.mkdir(parents=True, exist_ok=True)
     (out / 'args.json').write_text(json.dumps(vars(a), indent=1))
     if a.unpack: unpack_dir(a.data, a.unpack)
     if a.flow: unpack_flow(a.data)
-    D = Data(a.data, a.label, a.neutral, torch.device(a.device), a.lookback, a.days_intra, bool(a.flow), not a.no_intra, bool(a.mkt))
+    D = Data(a.data, a.label, a.neutral, torch.device(a.device), a.lookback, a.days_intra, bool(a.flow), not a.no_intra, bool(a.mkt), bool(a.extra))
     D.train_start = a.train_start; D.train_pool = a.train_pool
     blocks = [b for b in BLOCKS if b[0] in a.blocks.split(',')]
     if a.monthly: blocks = [m for b in blocks for m in month_blocks(b[0])]
