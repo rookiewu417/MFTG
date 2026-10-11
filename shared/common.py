@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import duckdb
 
-LAKE = Path('/home/ivenwu/projects/data/ashare')
+LAKE = Path(os.environ.get('MFTG_LAKE', '/home/ivenwu/projects/data/ashare'))   # override to build on another host
 CERES = Path('/home/ivenwu/projects/ceres/data')
 CATALOG = Path('/home/ivenwu/projects/ceres/catalog')
 OUT = Path(os.environ.get('MFTG_OUT', '/home/ivenwu/projects/MFTG/build'))   # build/mftg/long/ holds the MFTG long history

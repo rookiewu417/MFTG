@@ -21,6 +21,8 @@ build-base = "python shared/build_base.py"
 build-mftg = "python mftg/build_mftg.py"
 build-flow = "python mftg/build_flow.py"
 build-styles = "python mftg/build_styles.py"
+build-extra = "python mftg/build_extra.py"
+extra-ic = "python mftg/extra_ic.py"
 evaluate = "python shared/evaluate.py"
 rep-ensemble = "python baseline_early/rep_ensemble.py"
 # baseline

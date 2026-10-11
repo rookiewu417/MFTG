@@ -48,12 +48,15 @@ def _synthetic(root, T=700, N=120):
     it = (rng.normal(size=(T, N, 48, 5)) * 0.01).astype(np.float16); it[..., 4] = 1 / 48
     np.save(root / 'intra.npy', it)
     np.save(root / 'market.npy', rng.normal(size=(T, 10)).astype(np.float32))
+    np.save(root / 'extra.npy', rng.normal(size=(T, N, 6)).astype(np.float16))
 
 
 OPTION_SETS = [
     ['--label', 'y5+y10+y20', '--intra_center', '1', '--half_life', '120'],
     ['--mkt', '1', '--head', 'glu'],
     ['--mkt', '2', '--rnn', 'lstm', '--no_intra', '1'],
+    ['--extra', '1'],
+    ['--extra', '1', '--mkt', '2', '--no_intra', '1'],
 ]
 
 
@@ -79,3 +82,11 @@ def test_market_gate_starts_open():
     d = torch.randn(5, 20, 20) * 0.01; d2 = d.clone(); d2[..., 10:] = torch.randn(5, 20, 10)   # different market state
     with torch.no_grad():
         assert torch.allclose(m(d, None), m(d2, None), atol=1e-6)
+
+
+def test_extra_inputs_reach_the_model():
+    torch.manual_seed(0)
+    m = MFTG(d=8, h=8, layers=1, intra=False, nx=6).eval()
+    d = torch.randn(5, 20, 16) * 0.01; d2 = d.clone(); d2[..., 10:] += 1.0
+    with torch.no_grad():
+        assert not torch.allclose(m(d, None), m(d2, None), atol=1e-4)
