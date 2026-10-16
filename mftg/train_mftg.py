@@ -5,7 +5,9 @@ Data (from mftg/build_mftg.py + base panels) under --data:
   (--extra: extra.npy [T,N,K] fp16 from build_extra.py, appended to the daily inputs)
 Model: per-day intraday Transformer over 48 bars -> attention-pooled day vector (last --days_intra days);
        GRU over the last --lookback days of [daily bar embedding, intraday day vector, has-intraday flag] -> score.
-Loss: -IC against the rank-gauss label (optionally industry+size neutralised, optionally top-quintile weighted),
+       Options: --rnn patch (PatchTST encoder instead of the GRU), --graph k (correlation-graph peer aggregation before the head).
+Loss: -IC against the rank-gauss label (optionally industry+size neutralised, optionally top-quintile weighted,
+optionally plus --pool_w x -IC inside the predicted top --pool_q),
 same windows / label / output format as weave/train.py so evaluation is shared with the Weave track.
 """
 import argparse, json, time
@@ -147,8 +149,43 @@ class RankGLU(nn.Module):
         return self.lin(z) + self.out(self.drop(torch.tanh(self.a(z) * torch.sigmoid(self.g(z)))))
 
 
+class PatchEnc(nn.Module):
+    """PatchTST-style temporal encoder (Nie et al., ICLR 2023): non-overlapping patches of `patch` days -> tokens ->
+    Transformer; returns the token sequence like an RNN would (last token = newest patch)."""
+    def __init__(self, cin, h, patch=5, layers=2, max_len=60):
+        super().__init__()
+        self.p = patch; self.emb = nn.Linear(cin * patch, h); self.pos = nn.Parameter(torch.zeros(max_len // patch + 1, h))
+        self.enc = nn.TransformerEncoder(nn.TransformerEncoderLayer(h, 4, 2 * h, 0.1, batch_first=True, norm_first=True), layers)
+        self.norm = nn.LayerNorm(h)
+    def forward(self, z):                               # z [B,L,cin] -> ([B,L//p,h], None)
+        B, L, C = z.shape; L0 = L - L % self.p
+        x = self.emb(z[:, L - L0:].reshape(B, L0 // self.p, self.p * C))
+        return self.norm(self.enc(x + self.pos[-x.shape[1]:])), None
+
+
+class CorrGraph(nn.Module):
+    """Peer aggregation over a dynamic price-correlation graph (HIST / THGNN family): each stock attends to its k most
+    correlated stocks of the day (60-day daily returns); the update uses the neighbour summary and the stock's deviation from it."""
+    def __init__(self, h, k=10):
+        super().__init__()
+        self.k = k; self.q = nn.Linear(h, h); self.kv = nn.Linear(h, h)
+        self.out = nn.Sequential(nn.Linear(2 * h, h), nn.SiLU(), nn.Dropout(0.1), nn.Linear(h, h))
+        nn.init.zeros_(self.out[-1].weight); nn.init.zeros_(self.out[-1].bias)   # starts as the plain model
+    def forward(self, h, r):                            # h [B,H], r [B,L] daily log returns
+        with torch.autocast(device_type=r.device.type, enabled=False):
+            r = r.float(); r = r - r.mean(1, keepdim=True); r = r / (r.norm(dim=1, keepdim=True) + 1e-6)
+            C = r @ r.T; C.fill_diagonal_(-2.0)
+        k = min(self.k, h.shape[0] - 1)
+        c, j = C.topk(k, dim=1)                         # [B,k]
+        hk = self.kv(h)[j]                              # [B,k,H]
+        a = torch.softmax((self.q(h).unsqueeze(1) * hk).sum(-1) / h.shape[-1] ** 0.5 + 5.0 * c, dim=1)
+        s = (a.unsqueeze(-1) * hk).sum(1)
+        return h + self.out(torch.cat([s, h - s], -1))
+
+
 class MFTG(nn.Module):
-    def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0, center=0, mkt=0, nmk=10, head='mlp', rnn='gru', nx=0):
+    def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0, center=0, mkt=0, nmk=10, head='mlp', rnn='gru', nx=0,
+                 patch=5, graph=0, lookback=60):
         super().__init__()
         self.use_intra = intra; self.cin = cin; self.no_daily = False
         self.xs = None
@@ -160,7 +197,9 @@ class MFTG(nn.Module):
         self.dproj = nn.Linear(10 + nx + (nmk if mkt == 1 else 0), d)  # mkt 1: market features as extra inputs
         if mkt == 2:                                                   # mkt 2: market state gates the stock features (starts open)
             self.mgate = nn.Linear(nmk, 10); nn.init.zeros_(self.mgate.weight); nn.init.zeros_(self.mgate.bias)
-        self.gru = (nn.LSTM if rnn == 'lstm' else nn.GRU)(2 * d + 1 if intra else d, h, batch_first=True)
+        gin = 2 * d + 1 if intra else d
+        self.gru = PatchEnc(gin, h, patch, max_len=lookback) if rnn == 'patch' else (nn.LSTM if rnn == 'lstm' else nn.GRU)(gin, h, batch_first=True)
+        self.graph = CorrGraph(h, graph) if graph else None
         self.head = RankGLU(h) if head == 'glu' else \
             nn.Sequential(nn.LayerNorm(h), nn.Linear(h, h), nn.SiLU(), nn.Dropout(0.1), nn.Linear(h, 1))
     def forward(self, d, it, ind=None):                 # d [B,L,10], it [B,Di,48,5], ind [B] industry id + 1 (0 = none)
@@ -180,6 +219,7 @@ class MFTG(nn.Module):
             z = torch.cat([z, torch.cat([pad, torch.cat([e, has], -1)], 1)], -1)
         o, _ = self.gru(z)
         h = o[:, -1]
+        if self.graph is not None: h = self.graph(h, d[..., 3])
         if self.xs is not None: h = self.xs((h + self.iemb(ind)).unsqueeze(0))[0]
         return self.head(h).squeeze(-1)
 
@@ -210,15 +250,17 @@ def run(D, blk, seed, args):
     @torch.no_grad()
     def predict(model, t, idx):
         model.eval(); out = []
-        for s in range(0, len(idx), args.pred_batch):
-            d, it, ind = D.x(t, idx[s:s + args.pred_batch])
+        bs = len(idx) if model.graph is not None else args.pred_batch     # the graph needs the whole day's cross-section
+        for s in range(0, len(idx), bs):
+            d, it, ind = D.x(t, idx[s:s + bs])
             with torch.autocast(**ac): out.append(model(d, it, ind).float().cpu().numpy())
         return np.concatenate(out)
 
     def fit(days, epochs, val_days=None):
         model = MFTG(args.d, args.hidden, args.layers, not args.no_intra, cin=8 if args.flow else 5, xs=args.xs,
                     n_ind=int(D.ind.max()) + 1, center=args.intra_center, mkt=args.mkt,
-                    nmk=D.mkt.shape[1] if D.mkt is not None else 10, head=args.head, rnn=args.rnn, nx=D.nx).to(D.dev)
+                    nmk=D.mkt.shape[1] if D.mkt is not None else 10, head=args.head, rnn=args.rnn, nx=D.nx,
+                    patch=args.patch, graph=args.graph, lookback=args.lookback).to(D.dev)
         model.no_daily = bool(args.no_daily)
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
         best, best_state, best_ep, bad, hist = -1e9, None, 0, 0, []
@@ -239,7 +281,11 @@ def run(D, blk, seed, args):
                     lm = D.lmv[t, q['idx']]; us = (pd.Series(lm).rank().to_numpy() - 0.5) / n
                     w *= 1.0 + args.cap_w * np.nan_to_num(us, nan=0.5) ** 2
                 with torch.autocast(**ac): p = model(d, it, ind)
-                loss = corr_loss(p.float(), torch.from_numpy(q['z'][sel]).to(D.dev), torch.from_numpy(w[sel]).to(D.dev))
+                yb, wb = torch.from_numpy(q['z'][sel]).to(D.dev), torch.from_numpy(w[sel]).to(D.dev)
+                loss = corr_loss(p.float(), yb, wb)
+                if args.pool_w > 0:         # ordering inside the model's own top pool (where the long-only optimiser picks)
+                    pm = p.detach() >= torch.quantile(p.detach().float(), 1 - args.pool_q)
+                    loss = loss + args.pool_w * corr_loss(p.float()[pm], yb[pm], wb[pm])
                 opt.zero_grad(set_to_none=True); loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), 3.0); opt.step(); losses.append(float(loss.detach()))
             rec = {'ep': ep + 1, 'loss': float(np.mean(losses)), 'sec': round(time.time() - te)}
@@ -312,7 +358,11 @@ def main():
     ap.add_argument('--half_life', type=float, default=0, help='recency-weighted day sampling, half-life in trading days (0 = uniform)')
     ap.add_argument('--mkt', type=int, default=0, help='market-state features (market.npy): 1 = extra daily inputs, 2 = gate on the stock features')
     ap.add_argument('--head', default='mlp', choices=['mlp', 'glu'], help='score head: mlp or RankGLU')
-    ap.add_argument('--rnn', default='gru', choices=['gru', 'lstm'], help='temporal encoder')
+    ap.add_argument('--rnn', default='gru', choices=['gru', 'lstm', 'patch'], help='temporal encoder (patch = PatchTST-style Transformer)')
+    ap.add_argument('--patch', type=int, default=5, help='days per patch for --rnn patch')
+    ap.add_argument('--graph', type=int, default=0, help='k neighbours of the 60-day return-correlation graph (0 = off; set --pred_batch above N)')
+    ap.add_argument('--pool_w', type=float, default=0, help='weight of the extra IC loss inside the predicted top --pool_q of the batch')
+    ap.add_argument('--pool_q', type=float, default=0.3)
     ap.add_argument('--extra', type=int, default=0, help='append the extra per-stock daily inputs (extra.npy: money flow, margin, reports, valuation)')
     a = ap.parse_args()
     out = Path(a.out) / a.name; out.mkdir(parents=True, exist_ok=True)
