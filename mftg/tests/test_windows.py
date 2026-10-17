@@ -13,7 +13,7 @@ class FakeData:                     # just the fields Data.split reads
         dates = pd.bdate_range('2018-07-02', '2026-09-10')
         self.dint = dates.strftime('%Y%m%d').astype(int).to_numpy(); self.T = len(dates)
         self.lend = np.array([self.dint[t + H] if t + H < self.T else 99999999 for t in range(self.T)])
-        self.L, self.Di, self.train_start = 60, 10, train_start
+        self.L, self.LX, self.Di, self.train_start = 60, 60, 10, train_start
 
 
 @pytest.mark.parametrize('blk', ALL, ids=lambda b: b[0])
