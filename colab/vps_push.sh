@@ -12,6 +12,8 @@ awk -F'\t' '{n=""; b=""; k=split($3, a, " "); for (i=1;i<k;i++) {if (a[i]=="--na
              print $1 "\t" ($4==""?$1:$4) "/" n "\t" b}' $K/jobs_$SES.tsv > $M
 ssh vps "mkdir -p ~/mftg_colab/$SES ~/.config/colab-cli"
 scp -q $CFG/token.json $CFG/sessions.json $CFG/settings.json vps:.config/colab-cli/
-scp -q $MFTG_ROOT/colab/keeper_exec.py $MFTG_ROOT/colab/vps_watch.sh $MFTG_ROOT/colab/drive_sync.py vps:mftg_colab/
+# upload under a temporary name and rename: running watchers keep reading their own (old) copy of the script
+scp -q $MFTG_ROOT/colab/keeper_exec.py $MFTG_ROOT/colab/drive_sync.py vps:mftg_colab/
+scp -q $MFTG_ROOT/colab/vps_watch.sh vps:mftg_colab/vps_watch.sh.new && ssh vps "mv ~/mftg_colab/vps_watch.sh.new ~/mftg_colab/vps_watch.sh"
 scp -q $M vps:mftg_colab/$SES/manifest.tsv
 ssh vps "chmod +x ~/mftg_colab/vps_watch.sh; setsid nohup nice -n 19 ~/mftg_colab/vps_watch.sh $SES >> ~/mftg_colab/$SES/watch.log 2>&1 < /dev/null & echo started"

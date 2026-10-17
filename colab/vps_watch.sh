@@ -17,6 +17,7 @@ log() { echo "$(date '+%F %T') $*"; }
     echo pass | timeout 3700 $PY $W/keeper_exec.py exec -s $SES --timeout 7200 >/dev/null 2>&1
     log "keeper reconnect"; sleep 5
   done; log "keeper: session gone" ) >> $D/keeper.log 2>&1 &
+KP=$!
 
 fetch() {   # tag -> 0 once every file of the job is in Drive (one file on the VPS disk at a time)
   local ok=0
@@ -56,4 +57,5 @@ while alive; do
   fi
   sleep 600
 done
+pkill -P $KP 2>/dev/null; kill $KP 2>/dev/null     # the keeper's exec would otherwise wait out its timeout
 log "watch $SES exit"
