@@ -5,9 +5,11 @@ Data (from mftg/build_mftg.py + base panels) under --data:
   (--extra: extra.npy [T,N,K] fp16 from build_extra.py, appended to the daily inputs)
 Model: per-day intraday Transformer over 48 bars -> attention-pooled day vector (last --days_intra days);
        GRU over the last --lookback days of [daily bar embedding, intraday day vector, has-intraday flag] -> score.
-       Options: --rnn patch (PatchTST encoder instead of the GRU), --graph k (correlation-graph peer aggregation before the head).
+       Options: --rnn patch (PatchTST encoder instead of the GRU), --graph k (correlation-graph peer aggregation before the head),
+       --pretrain n (next-day-bar self-supervised epochs first), --sam rho (sharpness-aware minimisation),
+       --weekly n (extra GRU over n weekly bars), --demean 1 (market-relative daily price inputs).
 Loss: -IC against the rank-gauss label (optionally industry+size neutralised, optionally top-quintile weighted,
-optionally plus --pool_w x -IC inside the predicted top --pool_q),
+optionally plus --pool_w x -IC inside the predicted top --pool_q, optionally risk-adjusted: --vol_label),
 same windows / label / output format as weave/train.py so evaluation is shared with the Weave track.
 """
 import argparse, json, time
@@ -71,7 +73,8 @@ class Data:
         self.extra = torch.from_numpy(np.load(r / 'extra.npy')).to(dev) if extra else None            # fp16 [T,N,K] (build_extra.py)
         self.nx = self.extra.shape[2] if extra else 0
         log('data on gpu', tuple(self.intra.shape), tuple(self.daily.shape), f'{time.time()-t1:.0f}s')
-        self._cache = {}; self.train_start = 0; self.train_pool = 0
+        self._cache = {}; self.train_start = 0; self.train_pool = 0; self.vol_label = 0
+        self.LX = lookback; self.mm = None    # LX: days sliced per sample (> L with --weekly); mm: [T,4] market mean (--demean)
         self.idxm = np.load(r / 'index_member.npy', mmap_mode='r') if (r / 'index_member.npy').exists() else None
         self.sty = np.load(r / 'styles.npy', mmap_mode='r') if neutral == 2 else None     # beta, volatility, liquidity, momentum
 
@@ -84,7 +87,11 @@ class Data:
             if self.train_pool: m &= (self.idxm[t] & self.train_pool) > 0      # training / validation restricted to index members
         idx = np.where(m)[0]; out = {'t': t, 'idx': idx}
         if need_label and len(idx) >= 100:
-            z = np.mean([ndtri((pd.Series(yk[t, idx]).rank().to_numpy() - 0.5) / len(idx)) for yk in self.ys], 0)
+            sd = 1.0
+            if self.vol_label:      # risk-adjusted label: return / std of the last vol_label daily close-to-close log returns
+                r = self.daily[t - self.vol_label + 1:t + 1, torch.as_tensor(idx, device=self.dev), 3].float()
+                sd = np.maximum(r.std(0).cpu().numpy(), 0.005)
+            z = np.mean([ndtri((pd.Series(yk[t, idx] / sd).rank().to_numpy() - 0.5) / len(idx)) for yk in self.ys], 0)
             z = (z - z.mean()) / (z.std() + 1e-9)
             if self.neutral:
                 X = [np.ones(len(idx))]; ind = self.ind[t, idx]
@@ -98,9 +105,11 @@ class Data:
 
     def x(self, t, idx):
         ii = torch.as_tensor(idx, device=self.dev)
-        d = self.daily[t - self.L + 1:t + 1, ii].permute(1, 0, 2).float()                      # [B,L,10]
-        if self.extra is not None: d = torch.cat([d, self.extra[t - self.L + 1:t + 1, ii].permute(1, 0, 2).float()], -1)   # [B,L,10+nx]
-        if self.mkt is not None: d = torch.cat([d, self.mkt[t - self.L + 1:t + 1].expand(len(idx), -1, -1)], -1)   # [B,L,10+K]
+        L = self.LX
+        d = self.daily[t - L + 1:t + 1, ii].permute(1, 0, 2).float()                           # [B,L,10]
+        if self.mm is not None: d = torch.cat([d[..., :4] - self.mm[t - L + 1:t + 1], d[..., 4:]], -1)   # relative to the market
+        if self.extra is not None: d = torch.cat([d, self.extra[t - L + 1:t + 1, ii].permute(1, 0, 2).float()], -1)   # [B,L,10+nx]
+        if self.mkt is not None: d = torch.cat([d, self.mkt[t - L + 1:t + 1].expand(len(idx), -1, -1)], -1)   # [B,L,10+K]
         it = self.intra[t - self.Di + 1:t + 1, ii].permute(1, 0, 2, 3).float()                 # [B,Di,48,5]
         if self.flow is not None:
             f = self.flow[t - self.Di + 1:t + 1, ii].permute(1, 0, 2, 3).float()               # [B,Di,48,2]
@@ -110,7 +119,7 @@ class Data:
 
     def split(self, blk, stride):
         name, fs, fe, vs, ve, te = blk
-        cand = np.arange(max(self.L, self.Di), self.T)
+        cand = np.arange(max(self.LX, self.Di), self.T)
         if self.train_start: cand = cand[self.dint[cand] >= self.train_start]
         tr = cand[(self.lend[cand] <= te)][::stride]
         va = cand[(self.dint[cand] >= vs) & (self.lend[cand] <= ve)][::stride]
@@ -185,7 +194,7 @@ class CorrGraph(nn.Module):
 
 class MFTG(nn.Module):
     def __init__(self, d=32, h=64, layers=2, intra=True, cin=5, xs=0, n_ind=0, center=0, mkt=0, nmk=10, head='mlp', rnn='gru', nx=0,
-                 patch=5, graph=0, lookback=60):
+                 patch=5, graph=0, lookback=60, ssl=False, weekly=0):
         super().__init__()
         self.use_intra = intra; self.cin = cin; self.no_daily = False
         self.xs = None
@@ -200,9 +209,21 @@ class MFTG(nn.Module):
         gin = 2 * d + 1 if intra else d
         self.gru = PatchEnc(gin, h, patch, max_len=lookback) if rnn == 'patch' else (nn.LSTM if rnn == 'lstm' else nn.GRU)(gin, h, batch_first=True)
         self.graph = CorrGraph(h, graph) if graph else None
+        self.dec = nn.Linear(h, 10) if ssl else None   # next-day daily bar from the GRU state (--pretrain)
+        self.L = lookback; self.weekly = weekly         # weekly: number of 5-day bars in the long-horizon branch
+        if weekly:
+            self.wproj = nn.Linear(10, d); self.wgru = nn.GRU(d, h // 2, batch_first=True); self.wout = nn.Linear(h // 2, h)
+            nn.init.zeros_(self.wout.weight); nn.init.zeros_(self.wout.bias)    # starts as the plain model
         self.head = RankGLU(h) if head == 'glu' else \
             nn.Sequential(nn.LayerNorm(h), nn.Linear(h, h), nn.SiLU(), nn.Dropout(0.1), nn.Linear(h, 1))
     def forward(self, d, it, ind=None):                 # d [B,L,10], it [B,Di,48,5], ind [B] industry id + 1 (0 = none)
+        hw = None
+        if self.weekly:                                 # d holds 5 * weekly days: weekly bars -> small GRU, main path keeps the last L
+            w = d[:, -5 * self.weekly:, :10].reshape(d.shape[0], self.weekly, 5, 10)
+            wb = torch.cat([w[..., 0, 0:1], w[..., 1].amax(2, keepdim=True), w[..., 2].amin(2, keepdim=True),
+                            w[..., 3].sum(2, keepdim=True)], -1) * 30.0            # first gap, max high, min low, week log return
+            ow, _ = self.wgru(self.wproj(torch.cat([wb, w[..., 4:].mean(2)], -1)))
+            hw = self.wout(ow[:, -1]); d = d[:, -self.L:]
         B, L, _ = d.shape
         k = 10 + self.nx
         dd = torch.cat([d[..., :4] * 30.0, d[..., 4:k]], -1)
@@ -219,9 +240,15 @@ class MFTG(nn.Module):
             z = torch.cat([z, torch.cat([pad, torch.cat([e, has], -1)], 1)], -1)
         o, _ = self.gru(z)
         h = o[:, -1]
+        if hw is not None: h = h + hw
         if self.graph is not None: h = self.graph(h, d[..., 3])
         if self.xs is not None: h = self.xs((h + self.iemb(ind)).unsqueeze(0))[0]
         return self.head(h).squeeze(-1)
+
+    def ssl_loss(self, d):                              # self-supervised: predict day s+1's 10 bar features from the state at s
+        dd = torch.cat([d[..., :4] * 30.0, d[..., 4:10 + self.nx]], -1)
+        o, _ = self.gru(self.dproj(dd))
+        return ((self.dec(o[:, :-1]).float() - dd[:, 1:, :10].float()) ** 2).mean()
 
 
 def epoch_days(days, rng, half_life=0):
@@ -244,6 +271,7 @@ def rank_ic(p, y):
 
 def run(D, blk, seed, args):
     tr, va, tv, test = D.split(blk, args.stride)
+    cand = np.arange(max(D.LX, D.Di), D.T); pre = cand[D.dint[cand] < blk[1]][::args.stride]   # pretraining days (before the test)
     torch.manual_seed(seed); np.random.seed(seed)
     ac = dict(device_type=D.dev.type, dtype=torch.bfloat16, enabled=bool(args.amp))
 
@@ -260,11 +288,21 @@ def run(D, blk, seed, args):
         model = MFTG(args.d, args.hidden, args.layers, not args.no_intra, cin=8 if args.flow else 5, xs=args.xs,
                     n_ind=int(D.ind.max()) + 1, center=args.intra_center, mkt=args.mkt,
                     nmk=D.mkt.shape[1] if D.mkt is not None else 10, head=args.head, rnn=args.rnn, nx=D.nx,
-                    patch=args.patch, graph=args.graph, lookback=args.lookback).to(D.dev)
+                    patch=args.patch, graph=args.graph, lookback=args.lookback, ssl=args.pretrain > 0, weekly=args.weekly).to(D.dev)
         model.no_daily = bool(args.no_daily)
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
         best, best_state, best_ep, bad, hist = -1e9, None, 0, 0, []
         rng = np.random.default_rng(seed)
+        for pe in range(args.pretrain):     # features only (no labels): every day before the test window, incl. the label gap
+            model.train(); losses = []; te = time.time()
+            for t in rng.permutation(pre):
+                idx = np.where(D.univ[t])[0]
+                if len(idx) < 100: continue
+                d, _, _ = D.x(t, idx[rng.choice(len(idx), min(len(idx), args.max_batch), replace=False)])
+                with torch.autocast(**ac): loss = model.ssl_loss(d)
+                opt.zero_grad(set_to_none=True); loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 3.0); opt.step(); losses.append(float(loss.detach()))
+            log(blk[0], 'seed', seed, {'pretrain': pe + 1, 'loss': float(np.mean(losses)), 'sec': round(time.time() - te)})
         for ep in range(epochs):
             model.train(); losses = []; te = time.time()
             for t in epoch_days(days, rng, args.half_life):
@@ -287,6 +325,17 @@ def run(D, blk, seed, args):
                     pm = p.detach() >= torch.quantile(p.detach().float(), 1 - args.pool_q)
                     loss = loss + args.pool_w * corr_loss(p.float()[pm], yb[pm], wb[pm])
                 opt.zero_grad(set_to_none=True); loss.backward()
+                if args.sam > 0:            # sharpness-aware minimisation: gradient at w + rho * g/|g|, applied at w
+                    ps = [v for v in model.parameters() if v.grad is not None]
+                    gn = torch.norm(torch.stack([v.grad.norm() for v in ps])) + 1e-12
+                    eps = [args.sam * v.grad / gn for v in ps]
+                    with torch.no_grad():
+                        for v, e in zip(ps, eps): v.add_(e)
+                    opt.zero_grad(set_to_none=True)
+                    with torch.autocast(**ac): p2 = model(d, it, ind)
+                    corr_loss(p2.float(), yb, wb).backward()
+                    with torch.no_grad():
+                        for v, e in zip(ps, eps): v.sub_(e)
                 nn.utils.clip_grad_norm_(model.parameters(), 3.0); opt.step(); losses.append(float(loss.detach()))
             rec = {'ep': ep + 1, 'loss': float(np.mean(losses)), 'sec': round(time.time() - te)}
             if val_days is not None:
@@ -363,6 +412,11 @@ def main():
     ap.add_argument('--graph', type=int, default=0, help='k neighbours of the 60-day return-correlation graph (0 = off; set --pred_batch above N)')
     ap.add_argument('--pool_w', type=float, default=0, help='weight of the extra IC loss inside the predicted top --pool_q of the batch')
     ap.add_argument('--pool_q', type=float, default=0.3)
+    ap.add_argument('--sam', type=float, default=0, help='sharpness-aware minimisation radius rho (0 = plain AdamW)')
+    ap.add_argument('--pretrain', type=int, default=0, help='epochs of next-day-bar self-supervised pretraining before the IC loss (GRU, no intraday)')
+    ap.add_argument('--weekly', type=int, default=0, help='long-horizon branch over this many 5-day bars (52 = one year; 0 = off)')
+    ap.add_argument('--demean', type=int, default=0, help='subtract the day\'s tradable-universe mean from the daily price channels')
+    ap.add_argument('--vol_label', type=int, default=0, help='risk-adjusted label: divide returns by the std of the last N daily returns (0 = off)')
     ap.add_argument('--extra', type=int, default=0, help='append the extra per-stock daily inputs (extra.npy: money flow, margin, reports, valuation)')
     a = ap.parse_args()
     out = Path(a.out) / a.name; out.mkdir(parents=True, exist_ok=True)
@@ -370,7 +424,11 @@ def main():
     if a.unpack: unpack_dir(a.data, a.unpack)
     if a.flow: unpack_flow(a.data)
     D = Data(a.data, a.label, a.neutral, torch.device(a.device), a.lookback, a.days_intra, bool(a.flow), not a.no_intra, bool(a.mkt), bool(a.extra))
-    D.train_start = a.train_start; D.train_pool = a.train_pool
+    D.train_start = a.train_start; D.train_pool = a.train_pool; D.vol_label = a.vol_label
+    if a.weekly: D.LX = max(a.lookback, 5 * a.weekly)
+    if a.demean:
+        u = torch.from_numpy(D.univ).to(D.dev).unsqueeze(-1).float()                          # [T,N,1]
+        D.mm = (D.daily[..., :4].float() * u).sum(1) / u.sum(1).clamp(min=1)                  # [T,4]
     blocks = [b for b in BLOCKS if b[0] in a.blocks.split(',')]
     if a.monthly: blocks = [m for b in blocks for m in month_blocks(b[0])]
     for blk in blocks:
