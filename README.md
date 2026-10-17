@@ -1,232 +1,195 @@
 # MFTG
 
-**A股多频率神经网络因子挖掘与机器学习因子进阶研究**
+**A 股端到端选股研究：直接从原始行情训练神经网络，输出每日选股打分**
 
-本项目包含两个部分：
-1. **基线（多频率 GRU）**：日线 + 15 分钟线的多频率 GRU 模型，仅作为对比基线，不继续优化。
-2. **端到端线 MFTG**（`mftg/`）：直接从原始 5 分钟 K 线与日线训练的神经网络，不使用人工因子公式。
+MFTG（Multi-Frequency Transformer-GRU）只使用原始行情：日线、5 分钟 K 线和 15 秒主动买卖流，不做手工特征工程。日内编码器把每天的 5 分钟 K 线压成一个向量，GRU 读取最近 60 天的日线（可再拼上日内向量），输出一个分数。训练目标是让每天的分数与未来 10 日收益的截面排序相关性最大。
 
-因子线（Weave）已拆为独立项目，位于 `../Weave/`。
+本仓库包含数据构建、训练与云端运维脚本、全部实验的预测产物和实验记录。组合构建与回测在同级项目 [`../Portfolio/`](../Portfolio/README.md) 中完成。
 
 ---
 
-## 核心结果
+## 当前结果
 
-### 因子线（Weave）结果与基线对比
-在与基线完全相同的 4 个半年滚动测试窗口（2024H2–2026H1）上，**XGBoost + 多头加权损失**（`Weave-XGB-Top2`，因子线结果见 `../Weave`）表现最优：
+**推荐方案 MFTG-Ens-Neu**：四个中性化标签的成员（Daily-Neu、Daily-Neu-H256、Daily-Neu-CSI800、Full-Neu）逐日 z-score 后等权平均，再用 sty5 优化器构建全 A 多头组合。
 
-| 口径（全A，5日调仓，前10%等权，单边10bp） | 基线 daily GRU | XGB（普通） | **XGB + 多头加权** |
+**第一候选 `mftg_neu4_dmv6`**：把 Daily-Neu 换成 dDMV6（日线价格通道去掉当天股票池均值，标签改为收益除以过去 20 日波动，两组种子共 6 个合并），其余三个成员不变。
+
+全 A 多头，相对全 A 可交易等权股票池，2022-07 至 2026-06（8 个半年），开盘价成交。c10 = 单边 10bp、换手惩罚 0.5；c20 = 单边 20bp、换手惩罚 1.0。样本外为 2026-07-01 至 09-10 的累计超额，这段数据没有参与过训练。
+
+| 指标 | MFTG-Ens-Neu | `mftg_neu4_dmv6` |
+|---|---|---|
+| 全 A RankIC（周频截面） | 0.123 | 0.126 |
+| 剔除行业与五个风格后的 RankIC | 0.071 | 0.072 |
+| c10 年化超额 / IR | 13.4% / 2.39 | 14.8% / 2.54 |
+| c20 年化超额 / IR | 11.4% / 2.37 | 13.8% / 2.59 |
+| c10 超额最大回撤 | −5.6% | −6.8% |
+| 为负的半年数（c10） | 0 / 8 | 1 / 8（2026H1 −0.2%） |
+| 样本外累计（c10 / c20） | +4.4% / +4.8% | +6.0% / +5.6% |
+| 按开盘后 30 分钟 VWAP 成交（c10） | 13.3% | 14.4% |
+
+- **dmv6 暂不替换推荐方案**：它的领先主要来自更早的半年（2022H2 一个半年就贡献了 c10 提升的大部分），最近的 2026H1 反而落后 2.8 个百分点；样本外只有约 50 个交易日，且已被用来筛选过多个候选。切换条件：用 2026 年 10–12 月的数据、不改任何参数，两档成本下都不低于推荐方案。
+- **容量较小**：1 亿资金约 9.9%（dmv6 11.6%），10 亿约 6.1%（dmv6 7.6%）。
+- **信息主要在空头端**：按打分分 10 组，最低组年化 −37.5%，最高组 +14.1%；理论多空 51.5%，多头组合吃不到空头端。
+- **绝对收益**（dmv6，c10）：多头组合承担全部市场波动，年化 28.5%、波动 27.1%、夏普 1.00，最大回撤 −33.7%（同期等权股票池夏普 0.39）。
+
+完整的方案、训练、回测和可信度说明见各轮实验记录 [`TRACKS.md`](TRACKS.md)。
+
+---
+
+## 数据与股票池
+
+数据来自本机 A 股数据湖，面板覆盖 2018-07-02 至 2026-09-10，共 1991 个交易日。
+
+| 输入 | 内容 |
+|---|---|
+| 日线（10 通道） | 开、高、低、收相对前收盘的对数收益；对数成交额、对数自由流通换手率、对数流通市值（后三项按日做截面标准化）；收盘涨停、跌停标记；是否交易 |
+| 5 分钟 K 线（每天 48 根，5 通道） | 开、高、低、收相对前收盘的对数收益；该根成交量占全天比例 |
+| 15 秒主动买卖流（2020 年起） | 聚合到 48 根 5 分钟，作为额外通道 |
+
+**可交易股票池**（t 日收盘时）：当天有成交、不是 ST 或退市整理股、上市满 120 个交易日，不含北交所；面板包含已退市股票，没有幸存者偏差。股票池平均约 4070 只。行业用申万一级，市值用对数流通市值。
+
+---
+
+## 模型
+
+- **日内编码器**：每天 48 根 5 分钟 K 线 → 线性层 → 位置编码 → 2 层 Transformer → 注意力池化，得到一个日内向量。
+- **时序编码器**：GRU 读取最近 60 天的 [日线嵌入, 日内向量, 是否有日内数据]。只用日线的成员没有日内部分。
+- **输出头**：LayerNorm → 线性 → SiLU → Dropout → 线性，得到分数。
+- **标签**：t+1 日开盘买入、t+11 日开盘卖出的收益（y10）；t+1 日开盘涨停或停牌时标签缺失。再做截面排序、正态逆变换、标准化；中性化标签再对申万一级行业和对数流通市值做回归取残差。
+- **损失**：分数与标签的负截面相关系数，每天一个截面（最多随机抽 2500 只）。
+- **优化**：AdamW，学习率 5e-4，权重衰减 1e-4，梯度裁剪 3，bf16 混合精度；最多 30 个 epoch，验证集 RankIC 连续 5 个 epoch 不创新高即停。
+- **重训（refit）**：用训练集加验证集，以 round(最佳 epoch × 1.1) 个 epoch 重新训练，再预测测试期。
+
+### 成员与集成
+
+| 成员（规格名 `mftg/…`） | 输入 | 标签 | 其他 |
 |---|---|---|---|
-| **RankIC / ICIR** | 0.085 / 0.61 | 0.129 / 0.88 | **0.105 / 0.91** |
-| **行业市值中性 RankIC** | 0.076 | 0.110 | **0.085** |
-| **前10%超额（10日持有，年化）** | 1.7% | 11.8% | **25.0%** |
-| **组合相对等权股票池超额（扣费后）** | −1.8% | +12.1% | **+25.8%** |
-| **超额 IR** | −0.16 | 1.30 | **3.37** |
-| **每次调仓换手率** | 68% | 49% | **61%** |
-| **超额为正的窗口数** | 2/4 | 3/4 | **4/4** |
+| `Full` | 日线 + 5 分钟 K 线 + 订单流 | 普通 | 隐藏层 64 |
+| `Full-Neu` | 日线 + 5 分钟 K 线 + 订单流 | 中性化 | 隐藏层 128，A100 训练 |
+| `Daily-Neu` | 日线 | 中性化 | 隐藏层 128 |
+| `Daily-Neu-H256` | 日线 | 中性化 | 隐藏层 256 |
+| `Daily-Neu-CSI800` | 日线 | 中性化 | 隐藏层 128，只用沪深300 + 中证500 成分股训练，预测全 A |
+| `Daily-Neu-Top1` | 日线 | 中性化 + 多头加权 1 | 隐藏层 128 |
+| `_merge/dDMV6` | 日线（去市场化） | 风险调整 + 中性化 | 隐藏层 128，6 个种子合并 |
 
-在指数成分股内部同样稳健：
-- **中证1000**：成分股内超额 **+19.0%**（4/4 窗口为正，基线为 −2.8%）
-- **中证500**：成分股内超额 **+12.1%**（3/4 窗口为正，基线为 −6.7%）
+| 集成 | 构成 |
+|---|---|
+| **MFTG-Ens-Neu**（推荐） | Daily-Neu + Daily-Neu-H256 + Daily-Neu-CSI800 + Full-Neu，等权 |
+| `mftg_neu4_dmv6`（候选） | `_merge/dDMV6` + Daily-Neu-H256 + Daily-Neu-CSI800 + Full-Neu，等权 |
+| MFTG-Ens-Full | Full ×2 + Daily-Neu + Daily-Neu-Top1 |
+| MFTG-Ens | Full + Daily-Neu + Daily-Neu-Top1 ×2（最早的版本，已淘汰） |
 
-> **多头加权核心机制**：在 IC 损失和 XGB 样本权重中，给标签排名前 20% 的股票赋予额外权重（`top_w=2`）。牺牲部分全局排序精度，换取显著更强的多头选股能力。
+早期记录和 `results/`、`runs/` 里还在使用旧名：`fA`（Full）、`fNH`（Full-Neu）、`dNH`（Daily-Neu）、`dNH256`、`dNH800`、`dNT1H`（Daily-Neu-Top1）、`NEU4`（Ens-Neu）、`OURS`（Ens-Full）。
 
 ---
 
-## 项目架构
+## 评估与防前视
+
+1. **时点**：信号在 t 日收盘后生成，t+1 日开盘成交。去市场化用当天的均值，风险调整用过去 20 日的波动，都不含未来信息。
+2. **买卖可行性**：t+1 开盘涨停或停牌不能买，开盘跌停或停牌不能卖，强制继续持有。
+3. **滚动窗口**：每半年重训一次，一个样本属于哪一段看它的标签结束日（t+11 日）而不是特征日，因此训练样本的标签不会进入验证期或测试期。验证集是测试期之前的一年，只用来选 epoch 数。
+4. **样本内评估期**：2022H2 至 2026H1 共 8 个半年。
+5. **样本外**：2026H2X（2026-07-01 至 09-10），模型只用到 2026-06-30 的标签。注意：实验期间这段数据已用于筛选多个候选，真正干净的检验要等 2026 年 10–12 月的数据。
+6. **费用**：买卖各收一次单边费率（10bp 或 20bp），基准是当天可买股票等权，满仓不加杠杆。
+7. **噪声尺度**：换种子的 sty5 年化约 ±0.3–0.6 个百分点，IR 约 ±0.05；优化器路径噪声约 ±0.5–1 个百分点。判定以组合层为准，IC 只用来初筛；样本内领先的方案还要通过换种子复核和样本外检验。
+8. **组合层**：sty5 优化器每天调仓。线性规划最大化 `打分·权重 − 换手惩罚·|权重变化|`，约束为满仓、单票 ≤ 0.5%、行业偏离等权 ≤ 3%、规模 / 贝塔 / 波动暴露 ≤ ±0.05σ、流动性 / 动量暴露 ≤ ±0.1σ。
+
+---
+
+## 实验概览
+
+第三至第十一轮共试了 30 多个方向，逐项记录在 [`TRACKS.md`](TRACKS.md)。
+
+| 结论 | 方向 |
+|---|---|
+| **有效** | 中性化标签；风格约束下的优化器（流动性约束是关键）；去市场化输入与风险调整标签（只在替换 Daily-Neu 一个成员时有效） |
+| **IC 有提升但组合层无增益或样本外不通过** | 市场状态特征、新数据源（资金流、两融、龙虎榜、财务、估值）、头部池内损失、PatchTST |
+| **无效** | 日内去偏移、多期限标签、近期样本加权、按月重训、风格中性化标签、截面注意力、相关图、周线分支、LSTM、RankGLU 输出头、SAM、自监督预训练、集成 IC 加权、种子分歧惩罚、决策导向训练、风险模型二次规划、跟踪误差约束 |
+
+两条规律：
+
+- 信号 IC 在 0.123–0.127 之间变化时，sty5 组合都停在 13% 左右，IC 的小幅提升不再转化为多头收益。
+- 凡是样本外更好的候选，样本内最近的半年（2026H1）都更差，分不清是更适应近期还是偶然。
+
+---
+
+## 目录结构
 
 ```
 MFTG/
-├── README.md / LICENSE / .gitignore
-│
-├── docs/                                        # 文档
-│   ├── FINAL_STATUS.md                          # 基线运行终态与哈希清单
-│   └── METHOD_LIMITATIONS.md                    # 基线方法边界与实现假设（local_exports/ 里另有同内容副本）
-│
-├── baseline_src/                                # 基线代码（多频率 GRU，2024H2–2026H1 四个窗口）
-│   ├── gru_baseline.py                             # 数据预处理/模型训练/单点评估入口
-│   ├── rolling_full.py                          # 全市场滚动训练与推断
-│   ├── fullbase_dataset.py                      # 内存映射高频+日频数据集构建
-│   ├── feature_valid_inference.py               # 特征日截面推断流水线
-│   ├── ensemble_predictions.py                  # 多种子模型集成
-│   ├── factor_postprocess.py                    # 行业处理与 PIT 股票过滤（预测之后的后处理）
-│   ├── asof_inference_export.py                 # 按 feature_date 导出 as-of 预测池
-│   ├── portfolio_backtest.py                    # 严格 PIT 十分位组合回测
-│   ├── compare_feature_valid.py / inspect_dates.py   # 预测文件对比、日期检查小工具
-│   └── tests/                                   # test_*.py（pixi run baseline-test）
-│
-├── baseline_ops/                                # 基线训练的远端（AutoDL）运维脚本，已完成使命，仅留档
-│   ├── auto_shutdown_guard{,_v2,_v3}.sh         # 结果导出后的关机守卫（v1 已被撤销为只做诊断）
-│   ├── test_auto_shutdown_guard{,_v2,_v3}.sh    # 对应测试（用 mock 关机命令）
-│   ├── export_and_arm_watch.sh                  # 经 SSH 把结果包拉到 local_exports/ 并"上保险"
-│   ├── finalize_results.sh                      # 远端收尾：生成清单与结果包
-│   ├── finalization/                            # 守卫测试产生的日志
-│   └── profiling/                               # 远端性能小实验（sync_profile_temp.py / perf_memory_io.py，依赖已不在本地的缓存）
-│
-│
-├── baseline_preds/                              # 【勿动】基线预测与回测记录（Portfolio 的 common.py 硬编码读取 formal_ensembles/）
-│   ├── formal_ensembles/                        # 各模型各窗口的集成预测 npz
-│   └── formal_feature_valid/                    # 各窗口(2024H2-2026H1)回测明细与指标
-│
-├── local_exports/                               # 基线实验导出结果包与报告（含 266MB 结果包，已 gitignore）
-│   ├── README.md / RESULTS_INTERPRETATION.md / final_report.md / summary.json
-│   └── RESULT_BUNDLE_*.tar.gz、清单与日志
-│
-├── TRACKS.md                                # 实验迭代路线图（两条线的记录同在此文件）
-├── pixi.toml / pixi.lock                    # 唯一环境（基线与端到端共用）；task：build-* / evaluate / rep-ensemble / baseline-* / test
-├── manifests/                               # build/、runs/、baseline_preds/、local_exports/ 的 sha256 清单（这些产物不进 git）
-│
-├── shared/                                  # 共用代码
-│   ├── common.py                            # 路径常量（LAKE / OUT / SHARED）与面板工具
-│   ├── build_base.py                        # 基础面板：价格、可交易标记、行业、市值 → build/shared/base（脚本无 main 保护，import 即执行）
-│   ├── evaluate.py                          # IC 评估
-│   ├── add_labels.py                        # 不重建面板，按同一口径补算 y<h> 标签（先校验 y5/y10）
-│   └── tests/                               # ST 名称记录的 PIT 假设检查
-│
-├── mftg/                                    # MFTG 线：原始行情 → 日内 / 日线网络 → 预测
-│   ├── build_mftg.py / build_flow.py / build_styles.py   # 数据准备
-│   ├── train_mftg.py / driver_mftg.py       # 训练与 Colab 驱动
-│   ├── join_months.py / bench.py            # 月度重训拼接、速度基准
-│   ├── pack.sh                              # 重打 Colab 数据包（build/mftg/upload_e2e{,_daily}）
-│   ├── ens_icw.py                           # 成员按滚动 IC 加权的集成（第三轮 E4，未采用）
-│   ├── upload_{mftg,flow,parts}.sh          # 上传脚本
-│   └── tests/                               # 滚动窗口切分无泄露检查
-│
-├── baseline_early/                                   # 基线的早期窗口补训练（2022H2–2024H1）与 8 窗口拼接
-│   └── build_fullbase.py / driver_baseline.py / fullbase_dataset.py / gru_baseline.py / rolling_full.py / rep_ensemble.py
-│
-├── colab/                                   # 云端运维（env / start / login / keeper / supervisor / monitor / sync / fetch / submit / submit_jobs / status / watch / tail；acct/ 为多账号 shim）
-│
-├── build/                                   # 【勿动】数据产物（已 gitignore）
-│   ├── shared/                              # base/ 与 axes.npz
-│   ├── mftg/                                # 端到端数据、打包目录、long/（长历史）
-│   ├── repro/                               # 基线产物
-│   └── keeper/                              # 云端任务守护状态
-└── runs/                                    # 【勿动】预测文件（Portfolio 只读取这里）
-    ├── mftg/                                # 端到端线变体（见下方命名对照）
-    └── repro/                               # 基线（rep8/ 为拼接后的 8 窗口）
+├── shared/                  # 公共：路径常量与面板工具、基础面板构建、IC 评估、补算标签
+│   └── tests/               # ST 名称记录的 PIT 假设检查
+├── mftg/                    # 数据准备、训练、集成评估
+│   ├── build_mftg.py        # 日线与 5 分钟 K 线
+│   ├── build_flow.py        # 15 秒主动买卖流
+│   ├── build_styles.py / build_market.py / build_extra.py   # 风格暴露、市场状态、扩展特征
+│   ├── train_mftg.py        # 训练（模型、损失、滚动窗口、选项）
+│   ├── driver_mftg.py       # Colab 驱动
+│   ├── merge_runs.py        # 多组种子合并为一个成员
+│   ├── ens_eval.py          # 离线集成评估（IC、前 10% 超额、池内 IC）
+│   ├── pack.sh / upload_*.sh   # 数据打包与上传
+│   └── tests/               # 滚动窗口切分无泄露检查等
+├── colab/                   # 云端运维：会话启动、保活、监控、结果同步
+├── manifests/               # build/、runs/ 产物的 sha256 清单
+├── build/                   # 数据产物（已 gitignore）
+├── runs/mftg/               # 各变体的预测（npz 不入库，只留训练日志与参数）
+├── TRACKS.md                # 实验记录
+└── pixi.toml / pixi.lock    # 环境
 ```
-
-> **因子线与组合层已拆出**：因子线（Weave）是独立项目，位于 [`../Weave/`](../Weave/README.md)。组合层（组合构建、回测与评分）是独立项目，位于 [`../Portfolio/`](../Portfolio/README.md)。
-
----
-
-## 严谨的研究与评估准则
-
-1. **严格 Point-in-Time (PIT) 防未来函数**：
-   - 信号于 $t$ 日收盘后生成，调仓严格在 $t+1$ 日开盘价执行。
-   - 过滤 $t+1$ 日开盘一字涨停（无法买入）、停牌、ST 及上市未满 120 日次新股。
-   - 所有横截面标准化与分位数仅在当日有效可买股票池内计算。
-2. **滚动训练隔离 (Walk-Forward Validation)**：
-   - 滚动划分为 4 个半年窗口：`2024H2`, `2025H1`, `2025H2`, `2026H1`。
-   - 每个测试窗口前置 1 年独立验证集用于早停，严禁测试集信息泄露。
-3. **真实交易摩擦扣除**：
-   - 所有超额收益均已扣除单边 10bp 交易成本。
-   - 基准对齐：以全市场可交易等权股票池作为超额基准，剥离纯小盘 Beta 收益。
 
 ---
 
 ## 快速开始
 
-本项目使用 [pixi](https://pixi.sh/) 管理跨平台依赖与虚拟环境。
+使用 [pixi](https://pixi.sh/) 管理环境（PyTorch、Polars、DuckDB、pytest 等）。
 
-### 1. 安装环境
 ```bash
-# 基线与端到端线共用一个环境（PyTorch、Polars、DuckDB、pytest 等）
 pixi install
-pixi run test            # 全部测试
+pixi run pytest -q mftg/tests shared/tests     # 测试
 ```
 
-### 2. 基线模型流程
-基线已冻结，只作对比。正式 4 窗口（2024H2–2026H1）在 AutoDL 上用 `baseline_src/` 跑出，所需的 `full_base/`（全区间 15 分钟基底）和日缓存都没有归档，所以 `baseline_src/rolling_full.py` 在本地不能复跑正式窗口；脚本默认路径仍是当时的 `/root/autodl-tmp/...`，仅作记录。本地能复跑的是早期窗口（2022H2–2024H1）：
+### 1. 数据准备
+
+读取本机数据湖，写入 `build/shared` 与 `build/mftg`。
+
 ```bash
-# 1. 从本地湖生成 build/repro/{full_base,data}（15 分钟聚合沿用基线口径，区间到 2024-07-31）
-pixi run python baseline_early/build_fullbase.py
-
-# 2. 滚动训练（可选 daily / gru15 / mixed / incremental；不要传 --cache-dir，日缓存只在 AutoDL 上存在）
-cd baseline_early && pixi run python rolling_full.py --data-root ../build/repro/data --base-dir ../build/repro/full_base \
-    --out ../build/repro/rolling_daily --model daily --rounds 2022H2 --epochs 100 --seed 7
-
-# 3. 严格 PIT 组合回测（预测文件需含 stock_code，或 stock + codes）
-pixi run python baseline_src/portfolio_backtest.py --pred <path_to_pred.npz> --data /home/ivenwu/projects/data/ashare/daily/post_weighted.parquet --out <out_dir> --cost-bps 10
+pixi run build-base      # 基础面板：价格、可交易标记、行业、市值、标签
+pixi run build-mftg      # 日线与 5 分钟 K 线
+pixi run build-flow      # 15 秒主动买卖流
+pixi run build-styles    # 风格暴露
 ```
 
-### 3. 端到端线（MFTG）流程
+### 2. 训练
+
+在 Colab 上通过 `mftg/driver_mftg.py` 完成。用到的数据先用 `mftg/pack.sh` 打包，再用 `mftg/upload_*.sh` 上传。单个成员的训练参数示例：
+
 ```bash
-# 1. 数据准备（读取原始行情，写入 build/shared 与 build/mftg）
-pixi run build-base      # = python shared/build_base.py
-pixi run build-mftg
-pixi run build-flow
-pixi run build-styles
+# Daily-Neu：日线，中性化标签
+python mftg/train_mftg.py --name Daily-Neu --refit 1 --neutral 1 --no_intra 1 --hidden 128 --seeds 7,11,42 \
+    --blocks 2022H2,2023H1,2023H2,2024H1,2024H2,2025H1,2025H2,2026H1,2026H2X
 
-# 2. 训练：在 Colab 上通过 mftg/driver_mftg.py 与 mftg/upload_*.sh 完成（见 mftg/）
-# 3. 结果回收：colab/sync.sh 把预测下载到 runs/$LINE/<run>/<model>/，LINE 默认 mftg，基线任务用 LINE=repro
-#    会话名用 SES=<name>；临时文件在 /tmp/mftg_colab（可用 MFTG_SCRATCH 改）
+# dDMV：去市场化输入 + 风险调整标签（换另一组种子 101,202,303 再训一次，用 merge_runs.py 合并）
+python mftg/train_mftg.py --name dDMV --refit 1 --neutral 1 --no_intra 1 --hidden 128 --seeds 7,11,42 \
+    --vol_label 20 --demean 1 --blocks 2022H2,2023H1,2023H2,2024H1,2024H2,2025H1,2025H2,2026H1,2026H2X
 ```
 
-因子线（Weave）的流程见 [`../Weave/README.md`](../Weave/README.md)。
+### 3. 结果回收与评估
+
+```bash
+colab/sync.sh                                   # 预测下载到 runs/mftg/<run>/<model>/
+python mftg/merge_runs.py dDMV6 e2e/dDMV e2e/dDMV_s2   # 两组种子合并
+python mftg/ens_eval.py NEU4=Daily-Neu+Daily-Neu-H256+Daily-Neu-CSI800+Full-Neu \
+    DMV6=_merge/dDMV6+Daily-Neu-H256+Daily-Neu-CSI800+Full-Neu    # 集成的 IC、前 10% 超额、池内 IC
+```
+
+组合构建与回测见 [`../Portfolio/`](../Portfolio/README.md)。会话名用 `SES=<name>`，临时文件在 `/tmp/mftg_colab`（可用 `MFTG_SCRATCH` 改）。
+
+### 云端运维
+
+训练在 Colab 上长时间运行，需要保活：`colab/start.sh` 建会话，`colab/keeper.sh` 保持内核连接，`colab/supervisor.sh` 同步结果并在任务结束后停机，`colab/monitor.sh` 汇总状态并自动重提失败任务。也可以把保活交给一台低配 VPS（`colab/vps_*.sh`），结果直接写到 Google Drive，本机可以关机。
 
 ---
 
-## 命名对照（旧名 → 新名）
-
-端到端线（`mftg/`）的名字整理过两次：先把 `e2e` 系列统一为 **MFTG**（Multi-Frequency Transformer-GRU），再给变体和集成起正式的名字。下表左列是改名前在 TRACKS 和代码里使用的名字。
-
-**保留旧名的地方**：`results/` 下已生成的 csv / log / parquet 文件名（如 `r4_daily/long9_e2e_neu4_*.parquet`）、`runs/mftg/*/args.json` 里的 `name` 字段，以及远端 Colab 路径（`/content/e2e`、`e2e.tgz`）。这些是当时的产出记录或远端数据位置，改了就得重新上传数据，所以不动。
-
-### 仓库
-
-| 旧名 | 新名 | 说明 |
-|---|---|---|
-| `ml-factor` | MFTG | 仓库名（GitHub 与本地目录） |
-
-### 模型家族
-
-| 旧名 | 新名 | 说明 |
-|---|---|---|
-| `e2e` | MFTG | 端到端线的模型家族：日内 Transformer 编码 + 日间 GRU |
-
-### 单模型
-
-| 旧名 | 新名（规格名 `mftg/…`） | 输入 | 标签 | 其他 |
-|---|---|---|---|---|
-| `fA` | MFTG-Full（`mftg/Full`） | 日线 + 5 分钟 K 线 + 订单流 | 普通 | 隐藏层 64 |
-| `fNH` | MFTG-Full-Neu（`mftg/Full-Neu`） | 日线 + 5 分钟 K 线 + 订单流 | 中性化 | 隐藏层 128 |
-| `dNH` | MFTG-Daily-Neu（`mftg/Daily-Neu`） | 日线 | 中性化 | 隐藏层 128 |
-| `dNH256` | MFTG-Daily-Neu-H256（`mftg/Daily-Neu-H256`） | 日线 | 中性化 | 隐藏层 256 |
-| `dNH800` | MFTG-Daily-Neu-CSI800（`mftg/Daily-Neu-CSI800`） | 日线 | 中性化 | 隐藏层 128，训练池为沪深300 + 中证500（`--train_pool 3`） |
-| `dNT1H` | MFTG-Daily-Neu-Top1（`mftg/Daily-Neu-Top1`） | 日线 | 中性化 | 隐藏层 128，多头加权 1 |
-
-### 集成
-
-| 旧名 | 新名 | 成员与权重 | 信号组（`round4.py`） |
-|---|---|---|---|
-| `E2E`（09-30 的"最终端到端模型"） | MFTG-Ens | MFTG-Full ×1 + MFTG-Daily-Neu ×1 + MFTG-Daily-Neu-Top1 ×2 | 无 |
-| `OURS` | MFTG-Ens-Full | MFTG-Full ×2 + MFTG-Daily-Neu ×1 + MFTG-Daily-Neu-Top1 ×1 | `mftg_ens_full`（改名前为 `e2e_ours`） |
-| `NEU4` | MFTG-Ens-Neu | MFTG-Daily-Neu、MFTG-Daily-Neu-H256、MFTG-Daily-Neu-CSI800、MFTG-Full-Neu 等权 | `mftg_ens_neu`（改名前为 `e2e_neu4`） |
-| NEU4 与 OURS 各半 | MFTG-Ens-Both | — | `mftg_ens_both`（改名前为 `e2e_both`） |
-
-目前推荐的集成是 **MFTG-Ens-Neu**（TRACKS 中的"推荐方案"）。
-
-### 因子线（Weave）
-
-因子线代码已移到独立项目 `../Weave`（见其 README），下表只记录命名对应关系。
-
-| 旧名 | 新名（规格名 `weave/…`） | 配置 |
-|---|---|---|
-| 因子线（factor） | Weave（机器学习 + 因子组合） | 家族名，模型包括 XGBoost 与 MLP |
-| `runA_xgb/xgb` | Weave-XGB（`weave/XGB`） | 普通标签 |
-| `runB/xgb` | Weave-XGB-Neu（`weave/XGB-Neu`） | 中性化标签 |
-| `exp_xgb_top/xgb` | Weave-XGB-Top2（`weave/XGB-Top2`） | 多头加权，top_w = 2 |
-| `runA/mlp` | Weave-MLP（`weave/MLP`） | 普通标签 |
-| `exp_mlp_top/mlp` | Weave-MLP-Top（`weave/MLP-Top`） | 多头加权，权重未留记录 |
-| `ens/neuX_topX` | Weave-Ens-NeuTop（`ens/Weave-Ens-NeuTop`） | Weave-XGB-Neu 与 Weave-XGB-Top2 的组合 |
-
-已退役的 fusion 系列（`runA/fusion`、`exp_fusion_top`、`fusion_neu*`）保留原名，只作对照。远端 Colab 的输出目录（如 `/content/out/runB`）也保持不变。
-
-### 暂未改名
-
-以下探索性运行没有用在集成中，暂保留原名：`dNT`、`dNT800`、`dNT1H800`、`dNTH`、`dNLH`、`dNW`、`dA`、`dAW`、`dN`、`dN5`、`dT`、`dSH`、`dSH800`、`dNH_M`、`dNH_M1`、`dNH800_M`、`dNH_s7`、`dNHB`、`dNHX`、`daily_*`、`intra_only`、`pilot*`、`smoke*`。需要统一的话可以接着改。
-
 ## 许可证
+
 本项目代码采用 [MIT License](LICENSE)。
